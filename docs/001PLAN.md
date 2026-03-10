@@ -1,12 +1,12 @@
 # AutoHyre - GitHub Project Plan
 
-Complete development roadmap with milestones, labels, and visualization strategy.
+Development roadmap 
 
 ---
 
 ## 📊 GitHub Project Setup
 
-### Project Views to Create
+### Project Views 
 
 1. **Board View (Kanban)** - Classic TODO → In Progress → Done
 2. **Table View** - Spreadsheet with custom fields (Priority, Effort, Assignee)
@@ -14,7 +14,7 @@ Complete development roadmap with milestones, labels, and visualization strategy
 4. **Custom View: By Milestone** - Group issues by milestone
 5. **Custom View: By Label** - Group by Frontend/Backend/DevOps
 
-### How to Visualize & Showcase
+### Visualize
 
 **In GitHub:**
 - **Projects → Roadmap tab** - Shows timeline with milestone dates
@@ -32,7 +32,7 @@ Complete development roadmap with milestones, labels, and visualization strategy
 
 ## 🏷️ Labels (Tags)
 
-Create these labels in your repo:
+Labels in your repo:
 
 ### By Component
 - 🎨 `frontend` - Frontend/UI work
@@ -1405,19 +1405,19 @@ Acceptance Criteria:
 Estimate: 3 hours
 ```
 
-**#57 Vercel Deployment** `devops` `critical` `feature`
+**#57 Azure VM Deployment** `devops` `critical` `feature`
 ```
 Deploy frontend to Vercel
 
 Tasks:
-- [ ] Connect GitHub repo to Vercel
+- [ ] Connect GitHub repo to VM
 - [ ] Configure build settings
 - [ ] Set environment variables
 - [ ] Setup custom domain
 - [ ] Enable auto-deployments
 
 Acceptance Criteria:
-- Frontend live on Vercel
+- Frontend live onVM
 - Auto-deploys on push
 - Domain works
 
@@ -1489,7 +1489,7 @@ gantt
 
 ## 🎯 Progress Tracking
 
-### How to Use This Plan
+### Plan
 
 1. **Create GitHub Project**
    - Go to your repo → Projects → New project
@@ -1521,10 +1521,6 @@ Your Repo → Projects → AutoHyre
 - Roadmap view (Timeline with milestones)
 ```
 
-**External Showcase:**
-- Add this Gantt chart to README.md
-- Create public roadmap page in Notion
-- Use shields.io badges: ![Milestone 1](https://img.shields.io/badge/Milestone%201-65%25-yellow)
 
 ### Progress Shields for README
 
