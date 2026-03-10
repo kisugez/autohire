@@ -67,42 +67,42 @@ Labels in your repo:
 ## 🎯 Milestones
 
 ### Milestone 1: Frontend MVP (Week 1)
-**Due:** 3 weeks from start  
+**Due:** 1 weeks from start  
 **Goal:** Complete all user-facing pages  
 **Success Criteria:** User can navigate entire app, create jobs, view candidates
 
 **Issues:** #1-21 (Authentication, Jobs, Candidates, Outreach, Workflows UI, Billing, Support)
 
 ### Milestone 2: Backend Core (Week 2)
-**Due:** 6 weeks from start  
+**Due:** 2 weeks from start  
 **Goal:** Build API and database  
 **Success Criteria:** All API endpoints working, data persists
 
 **Issues:** #22-40 (Auth API, Jobs API, Candidates API, Database schema, Workflow storage)
 
-### Milestone 3: Scrapers & Automation (Week 2)
-**Due:** 9 weeks from start  
+### Milestone 2: Scrapers & Automation (Week 2)
+**Due:** 2 weeks from start  
 **Goal:** Working LinkedIn/Indeed/GitHub scrapers  
 **Success Criteria:** Can post jobs and scrape candidates automatically
 
 **Issues:** #41-55 (Playwright setup, LinkedIn scraper, Indeed scraper, GitHub API, Proxy integration)
 
-### Milestone 4: AI & Email (Week 3)
-**Due:** 11 weeks from start  
+### Milestone 3: AI & Email (Week 3)
+**Due:** 3 weeks from start  
 **Goal:** AI screening and email campaigns functional  
 **Success Criteria:** Candidates auto-scored, emails sent
 
 **Issues:** #56-65 (OpenAI integration, Resume parsing, Email templates, SMTP setup)
 
 ### Milestone 5: Testing & Polish (Week 3)
-**Due:** 13 weeks from start  
+**Due:** 3 weeks from start  
 **Goal:** Bug-free, tested, documented  
 **Success Criteria:** All tests passing, docs complete
 
 **Issues:** #66-75 (Unit tests, Integration tests, E2E tests, Documentation)
 
 ### Milestone 6: Deployment (Week 3)
-**Due:** 14 weeks from start  
+**Due:** 3 weeks from start  
 **Goal:** Live in production  
 **Success Criteria:** Deployed, accessible, monitored
 
