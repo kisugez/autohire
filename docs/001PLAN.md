@@ -66,42 +66,42 @@ Create these labels in your repo:
 
 ## 🎯 Milestones
 
-### Milestone 1: Frontend MVP (Week 1-3)
+### Milestone 1: Frontend MVP (Week 1)
 **Due:** 3 weeks from start  
 **Goal:** Complete all user-facing pages  
 **Success Criteria:** User can navigate entire app, create jobs, view candidates
 
 **Issues:** #1-21 (Authentication, Jobs, Candidates, Outreach, Workflows UI, Billing, Support)
 
-### Milestone 2: Backend Core (Week 4-6)
+### Milestone 2: Backend Core (Week 2)
 **Due:** 6 weeks from start  
 **Goal:** Build API and database  
 **Success Criteria:** All API endpoints working, data persists
 
 **Issues:** #22-40 (Auth API, Jobs API, Candidates API, Database schema, Workflow storage)
 
-### Milestone 3: Scrapers & Automation (Week 7-9)
+### Milestone 3: Scrapers & Automation (Week 2)
 **Due:** 9 weeks from start  
 **Goal:** Working LinkedIn/Indeed/GitHub scrapers  
 **Success Criteria:** Can post jobs and scrape candidates automatically
 
 **Issues:** #41-55 (Playwright setup, LinkedIn scraper, Indeed scraper, GitHub API, Proxy integration)
 
-### Milestone 4: AI & Email (Week 10-11)
+### Milestone 4: AI & Email (Week 3)
 **Due:** 11 weeks from start  
 **Goal:** AI screening and email campaigns functional  
 **Success Criteria:** Candidates auto-scored, emails sent
 
 **Issues:** #56-65 (OpenAI integration, Resume parsing, Email templates, SMTP setup)
 
-### Milestone 5: Testing & Polish (Week 12-13)
+### Milestone 5: Testing & Polish (Week 3)
 **Due:** 13 weeks from start  
 **Goal:** Bug-free, tested, documented  
 **Success Criteria:** All tests passing, docs complete
 
 **Issues:** #66-75 (Unit tests, Integration tests, E2E tests, Documentation)
 
-### Milestone 6: Deployment (Week 14)
+### Milestone 6: Deployment (Week 3)
 **Due:** 14 weeks from start  
 **Goal:** Live in production  
 **Success Criteria:** Deployed, accessible, monitored
@@ -1541,13 +1541,13 @@ Your Repo → Projects → AutoHyre
 
 | Milestone | Issues | Est. Hours | Target Date |
 |-----------|--------|------------|-------------|
-| 1. Frontend MVP | #1-21 | 112h | Week 3 |
-| 2. Backend Core | #22-35 | 65h | Week 6 |
-| 3. Scrapers | #36-42 | 46h | Week 9 |
-| 4. AI & Email | #43-48 | 25h | Week 11 |
-| 5. Testing | #49-53 | 40h | Week 13 |
-| 6. Deployment | #54-58 | 18h | Week 14 |
-| **TOTAL** | **58 issues** | **306h** | **~14 weeks** |
+| 1. Frontend MVP | #1-21 | 112h | Week 1 |
+| 2. Backend Core | #22-35 | 65h | Week 1 |
+| 3. Scrapers | #36-42 | 46h | Week 2 |
+| 4. AI & Email | #43-48 | 25h | Week 2 |
+| 5. Testing | #49-53 | 40h | Week 3 |
+| 6. Deployment | #54-58 | 18h | Week 3 |
+| **TOTAL** | **~ 3 weeks** |
 
 ---
 
