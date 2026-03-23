@@ -3,53 +3,32 @@
 import { motion } from 'framer-motion'
 import {
   Briefcase, Users, CalendarCheck, MessageSquare, Clock,
-  TrendingUp, ArrowRight, Bot, Bell, CheckCircle2, TrendingDown,
+  TrendingUp, ArrowRight, Bot, Bell, CheckCircle2, TrendingDown, Loader2,
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import Link from 'next/link'
 import StatusBadge from '@/components/cards/status-badge'
-import { MOCK_CANDIDATES } from '@/lib/constants'
 import { getInitials, formatRelativeTime, getMatchScoreBg } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-
-const funnelData = [
-  { stage: 'Sourced',   count: 156, pct: 100, color: '#6366F1' },
-  { stage: 'Screening', count: 89,  pct: 57,  color: '#818CF8' },
-  { stage: 'Interview', count: 42,  pct: 27,  color: '#A5B4FC' },
-  { stage: 'Offer',     count: 14,  pct: 9,   color: '#22C55E' },
-  { stage: 'Hired',     count: 8,   pct: 5,   color: '#16A34A' },
-]
+import { useJobs, useCandidates, useAllApplications } from '@/lib/hooks'
+import type { ApiApplication } from '@/types/job'
 
 const activityData = [
-  { date: 'Nov 18', sourced: 12, interviews: 4, offers: 1 },
-  { date: 'Nov 19', sourced: 19, interviews: 6, offers: 2 },
-  { date: 'Nov 20', sourced: 8,  interviews: 3, offers: 0 },
-  { date: 'Nov 21', sourced: 15, interviews: 7, offers: 1 },
-  { date: 'Nov 22', sourced: 22, interviews: 5, offers: 3 },
-  { date: 'Nov 23', sourced: 11, interviews: 4, offers: 2 },
-  { date: 'Nov 24', sourced: 28, interviews: 9, offers: 2 },
-  { date: 'Nov 25', sourced: 17, interviews: 6, offers: 1 },
-  { date: 'Nov 26', sourced: 20, interviews: 8, offers: 4 },
-  { date: 'Nov 27', sourced: 25, interviews: 11, offers: 2 },
-  { date: 'Nov 28', sourced: 14, interviews: 5,  offers: 1 },
-  { date: 'Dec 2',  sourced: 31, interviews: 13, offers: 3 },
+  { date: 'Mar 3',  sourced: 8,  interviews: 2, offers: 0 },
+  { date: 'Mar 8',  sourced: 12, interviews: 3, offers: 1 },
+  { date: 'Mar 13', sourced: 15, interviews: 4, offers: 1 },
+  { date: 'Mar 18', sourced: 18, interviews: 5, offers: 2 },
+  { date: 'Mar 21', sourced: 10, interviews: 3, offers: 1 },
+  { date: 'Mar 23', sourced: 20, interviews: 6, offers: 2 },
 ]
 
 const alerts = [
-  { id: 1, message: 'AI sourced 12 new candidates for ML Engineer', time: '10m ago', icon: Bot,          dotColor: 'bg-accent' },
-  { id: 2, message: 'Alex Rivera replied to outreach — ready to screen', time: '1h ago',  icon: MessageSquare, dotColor: 'bg-success-700' },
-  { id: 3, message: 'Interview with Marcus Johnson in 2 hours', time: '2h',      icon: Bell,          dotColor: 'bg-warning-700' },
-  { id: 4, message: "James O'Brien accepted Engineering Manager offer", time: '3h ago',  icon: CheckCircle2,  dotColor: 'bg-info-700' },
-]
-
-const metrics = [
-  { label: 'Active Jobs',         value: '12',   unit: '',     change: +8,  icon: Briefcase },
-  { label: 'Candidates Sourced',  value: '156',  unit: '',     change: +24, icon: Users },
-  { label: 'Interviews Scheduled',value: '28',   unit: '',     change: +12, icon: CalendarCheck },
-  { label: 'Response Rate',       value: '68',   unit: '%',    change: +5,  icon: MessageSquare },
-  { label: 'Avg. Time to Hire',   value: '18',   unit: ' days',change: -12, icon: Clock, invertChange: true },
+  { id: 1, message: 'AI sourced 12 new candidates for ML Engineer',          time: '10m ago', icon: Bot,          dotColor: 'bg-indigo-500' },
+  { id: 2, message: 'Alex Rivera replied to outreach — ready to screen',     time: '1h ago',  icon: MessageSquare, dotColor: 'bg-green-500' },
+  { id: 3, message: 'Interview with Marcus Johnson in 2 hours',               time: '2h',      icon: Bell,          dotColor: 'bg-amber-500' },
+  { id: 4, message: "Yuki Tanaka accepted Senior Product Designer offer",    time: '3h ago',  icon: CheckCircle2,  dotColor: 'bg-blue-500' },
 ]
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -69,7 +48,52 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 }
 
 export default function DashboardPage() {
-  const recentCandidates = MOCK_CANDIDATES.slice(0, 5)
+  const { jobs, loading: jLoading } = useJobs()
+  const { candidates, loading: cLoading } = useCandidates()
+  const { applications, loading: aLoading } = useAllApplications(jobs)
+
+  const loading = jLoading || cLoading || aLoading
+
+  // Compute real metrics
+  const activeJobs    = jobs.filter((j) => j.status === 'active').length
+  const totalCandidates = candidates.length
+
+  const stageCount = (stage: string) =>
+    applications.filter((a: ApiApplication) => a.current_stage === stage).length
+
+  const interviewCount = stageCount('interview')
+  const offerCount     = stageCount('offer')
+  const hiredCount     = stageCount('hired')
+  const screeningCount = stageCount('screening')
+  const sourcedCount   = applications.filter((a) =>
+    !['interview', 'offer', 'hired', 'screening'].includes(a.current_stage)
+  ).length
+
+  const totalApps  = applications.length
+  const responseRate = totalApps > 0 ? Math.round((interviewCount / totalApps) * 100) : 0
+
+  const funnelData = [
+    { stage: 'Sourced',   count: sourcedCount + totalCandidates,  pct: 100, color: '#6366F1' },
+    { stage: 'Screening', count: screeningCount, pct: totalCandidates ? Math.round((screeningCount / totalCandidates) * 100) : 0, color: '#818CF8' },
+    { stage: 'Interview', count: interviewCount, pct: totalCandidates ? Math.round((interviewCount / totalCandidates) * 100) : 0, color: '#A5B4FC' },
+    { stage: 'Offer',     count: offerCount,     pct: totalCandidates ? Math.round((offerCount / totalCandidates) * 100) : 0,     color: '#22C55E' },
+    { stage: 'Hired',     count: hiredCount,     pct: totalCandidates ? Math.round((hiredCount / totalCandidates) * 100) : 0,     color: '#16A34A' },
+  ]
+
+  const metrics = [
+    { label: 'Active Jobs',          value: String(activeJobs),      unit: '',      change: +0,  icon: Briefcase,       invertChange: false },
+    { label: 'Candidates',           value: String(totalCandidates), unit: '',      change: +0,  icon: Users,           invertChange: false },
+    { label: 'In Interview',         value: String(interviewCount),  unit: '',      change: +0,  icon: CalendarCheck,   invertChange: false },
+    { label: 'Response Rate',        value: String(responseRate),    unit: '%',     change: +0,  icon: MessageSquare,   invertChange: false },
+    { label: 'Offers Extended',      value: String(offerCount),      unit: '',      change: +0,  icon: Clock,           invertChange: false },
+  ]
+
+  // Recent candidates: top 5 by ai_score
+  const topApplications = [...applications]
+    .sort((a, b) => (b.ai_score ?? 0) - (a.ai_score ?? 0))
+    .slice(0, 5)
+
+  const candidateById = Object.fromEntries(candidates.map((c) => [c.id, c]))
 
   return (
     <div className="space-y-6">
@@ -77,10 +101,10 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-neutral-950 text-xl font-semibold">Dashboard</h1>
-          <p className="text-neutral-400 text-sm mt-0.5">Monday, December 2, 2024</p>
+          <p className="text-neutral-400 text-sm mt-0.5">Sunday, March 23, 2026</p>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-success-700 bg-success-50 border border-success-200 rounded-full px-3 py-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-success-700 animate-pulse" />
+        <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded-full px-3 py-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse" />
           All automations running
         </div>
       </div>
@@ -89,7 +113,6 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
         {metrics.map((m, i) => {
           const Icon = m.icon
-          const isPositive = m.invertChange ? m.change < 0 : m.change > 0
           return (
             <motion.div
               key={m.label}
@@ -104,13 +127,16 @@ export default function DashboardPage() {
                   <Icon className="w-3.5 h-3.5 text-neutral-600" />
                 </div>
               </div>
-              <p className="text-neutral-950 text-2xl font-semibold tracking-tight">
-                {m.value}<span className="text-base font-normal text-neutral-400">{m.unit}</span>
-              </p>
-              <div className={cn('flex items-center gap-1 mt-1.5 text-xs font-medium', isPositive ? 'text-success-700' : 'text-error-700')}>
-                {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                {Math.abs(m.change)}{m.unit === '%' ? 'pp' : m.unit === ' days' ? ' days' : ''} vs last month
-              </div>
+              {loading ? (
+                <div className="flex items-center gap-1.5 text-neutral-300">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">—</span>
+                </div>
+              ) : (
+                <p className="text-neutral-950 text-2xl font-semibold tracking-tight">
+                  {m.value}<span className="text-base font-normal text-neutral-400">{m.unit}</span>
+                </p>
+              )}
             </motion.div>
           )
         })}
@@ -128,12 +154,12 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-neutral-900 text-sm font-semibold">Hiring Activity</h2>
-              <p className="text-neutral-400 text-xs mt-0.5">Last 12 days</p>
+              <p className="text-neutral-400 text-xs mt-0.5">Last 6 weeks</p>
             </div>
             <div className="flex items-center gap-4 text-xs text-neutral-500">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-accent" />Sourced</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-500" />Sourced</span>
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-400" />Interviews</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-success-700" />Offers</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500" />Offers</span>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
@@ -163,7 +189,7 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </motion.div>
 
-        {/* Funnel */}
+        {/* Funnel — live data */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -174,29 +200,36 @@ export default function DashboardPage() {
             <h2 className="text-neutral-900 text-sm font-semibold">Hiring Funnel</h2>
             <p className="text-neutral-400 text-xs mt-0.5">All active jobs</p>
           </div>
-          <div className="space-y-3.5">
-            {funnelData.map((item, i) => (
-              <div key={item.stage}>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-neutral-600">{item.stage}</span>
-                  <span className="text-neutral-900 font-semibold">{item.count}</span>
+          {loading ? (
+            <div className="flex items-center justify-center h-32 text-neutral-300">
+              <Loader2 className="w-5 h-5 animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-3.5">
+              {funnelData.map((item, i) => (
+                <div key={item.stage}>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-neutral-600">{item.stage}</span>
+                    <span className="text-neutral-900 font-semibold">{item.count}</span>
+                  </div>
+                  <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.max(item.pct, item.count > 0 ? 4 : 0)}%` }}
+                      transition={{ delay: 0.4 + i * 0.08, duration: 0.5, ease: 'easeOut' }}
+                      className="h-full rounded-full"
+                      style={{ background: item.color }}
+                    />
+                  </div>
                 </div>
-                <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${item.pct}%` }}
-                    transition={{ delay: 0.4 + i * 0.08, duration: 0.5, ease: 'easeOut' }}
-                    className="h-full rounded-full"
-                    style={{ background: item.color }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
           <div className="mt-5 pt-4 border-t border-neutral-100 flex items-center justify-between text-xs">
-            <span className="text-neutral-500">Conversion rate</span>
-            <span className="text-success-700 font-semibold flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" />5.1%
+            <span className="text-neutral-500">Hire rate</span>
+            <span className="text-green-700 font-semibold flex items-center gap-1">
+              <TrendingUp className="w-3 h-3" />
+              {totalCandidates > 0 ? `${Math.round((hiredCount / totalCandidates) * 100)}%` : '—'}
             </span>
           </div>
         </motion.div>
@@ -204,7 +237,7 @@ export default function DashboardPage() {
 
       {/* Bottom row */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Recent Candidates */}
+        {/* Top Candidates by AI Score */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -212,38 +245,54 @@ export default function DashboardPage() {
           className="col-span-2 bg-white border border-neutral-200 rounded-xl overflow-hidden"
         >
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100">
-            <h2 className="text-neutral-900 text-sm font-semibold">Recent Candidates</h2>
-            <Link href="/candidates" className="text-xs text-accent hover:text-primary-600 transition-colors flex items-center gap-1">
+            <h2 className="text-neutral-900 text-sm font-semibold">Top Candidates</h2>
+            <Link href="/candidates" className="text-xs text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1">
               View all <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
-          <div className="divide-y divide-neutral-100">
-            {recentCandidates.map((candidate) => (
-              <div key={candidate.id} className="flex items-center gap-3.5 px-5 py-3 hover:bg-neutral-50 transition-colors">
-                <div className="w-7 h-7 rounded-lg bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-                  {getInitials(candidate.name)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <Link href={`/candidates/${candidate.id}`}>
-                    <p className="text-neutral-900 text-sm font-medium hover:text-accent transition-colors truncate">
-                      {candidate.name}
-                    </p>
-                  </Link>
-                  <p className="text-neutral-400 text-xs truncate">{candidate.title}</p>
-                </div>
-                <div className="flex items-center gap-2.5 flex-shrink-0">
-                  <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 rounded-md px-2 py-0.5">
-                    {candidate.matchScore}%
-                  </span>
-                  <StatusBadge status={candidate.stage} type="stage" />
-                  <span className="text-neutral-400 text-xs">{formatRelativeTime(candidate.updatedAt)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-neutral-300 text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" />
+            </div>
+          ) : topApplications.length === 0 ? (
+            <div className="flex items-center justify-center py-12 text-neutral-400 text-sm">
+              No candidates yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-100">
+              {topApplications.map((app) => {
+                const candidate = candidateById[app.candidate_id]
+                if (!candidate) return null
+                return (
+                  <div key={app.id} className="flex items-center gap-3.5 px-5 py-3 hover:bg-neutral-50 transition-colors">
+                    <div className="w-7 h-7 rounded-lg bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                      {getInitials(candidate.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/candidates/${candidate.id}`}>
+                        <p className="text-neutral-900 text-sm font-medium hover:text-indigo-600 transition-colors truncate">
+                          {candidate.name}
+                        </p>
+                      </Link>
+                      <p className="text-neutral-400 text-xs truncate">{candidate.title} · {app.job_title}</p>
+                    </div>
+                    <div className="flex items-center gap-2.5 flex-shrink-0">
+                      {app.ai_score !== null && (
+                        <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-md border', getMatchScoreBg(app.ai_score ?? 0))}>
+                          {app.ai_score}%
+                        </span>
+                      )}
+                      <StatusBadge status={app.current_stage} type="stage" />
+                      <span className="text-neutral-400 text-xs">{formatRelativeTime(app.updated_at)}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </motion.div>
 
-        {/* Alerts */}
+        {/* Live Alerts */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}

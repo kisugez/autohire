@@ -3,61 +3,92 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import { Plus, Star, Briefcase, ChevronRight } from 'lucide-react'
-import { MOCK_CANDIDATES } from '@/lib/constants'
+import { Plus, Star, Briefcase, ChevronRight, Loader2, AlertCircle } from 'lucide-react'
 import StatusBadge from '@/components/cards/status-badge'
 import SearchInput from '@/components/cards/search-input'
 import FilterDropdown from '@/components/cards/filter-dropdown'
 import { getInitials, getMatchScoreBg, formatRelativeTime, cn } from '@/lib/utils'
-
-const stageOptions = [
-  { label: 'All Stages', value: '' },
-  { label: 'Sourced', value: 'sourced' },
-  { label: 'Screening', value: 'screening' },
-  { label: 'Interview', value: 'interview' },
-  { label: 'Offer', value: 'offer' },
-  { label: 'Hired', value: 'hired' },
-  { label: 'Rejected', value: 'rejected' },
-]
+import { useCandidates, useJobs, useAllApplications } from '@/lib/hooks'
+import type { ApiCandidate } from '@/types/candidate'
+import type { ApiApplication } from '@/types/job'
 
 const sourceOptions = [
   { label: 'All Sources', value: '' },
-  { label: 'LinkedIn', value: 'linkedin' },
-  { label: 'GitHub', value: 'github' },
-  { label: 'Referral', value: 'referral' },
-  { label: 'Website', value: 'website' },
+  { label: 'LinkedIn',   value: 'linkedin' },
+  { label: 'GitHub',     value: 'github' },
+  { label: 'Referral',   value: 'referral' },
+  { label: 'Website',    value: 'website' },
+  { label: 'Indeed',     value: 'indeed' },
+]
+
+const stageOptions = [
+  { label: 'All Stages',  value: '' },
+  { label: 'Sourced',     value: 'sourced' },
+  { label: 'Screening',   value: 'screening' },
+  { label: 'Interview',   value: 'interview' },
+  { label: 'Offer',       value: 'offer' },
+  { label: 'Hired',       value: 'hired' },
+  { label: 'Rejected',    value: 'rejected' },
 ]
 
 const scoreOptions = [
-  { label: 'Any Score', value: '' },
-  { label: '90%+ Match', value: '90' },
-  { label: '80%+ Match', value: '80' },
-  { label: '70%+ Match', value: '70' },
+  { label: 'Any Score',   value: '' },
+  { label: '90%+ Match',  value: '90' },
+  { label: '80%+ Match',  value: '80' },
+  { label: '70%+ Match',  value: '70' },
 ]
 
 export default function CandidatesPage() {
-  const [search, setSearch] = useState('')
-  const [stageFilter, setStageFilter] = useState('')
-  const [sourceFilter, setSourceFilter] = useState('')
-  const [scoreFilter, setScoreFilter] = useState('')
+  const { candidates, loading: cLoading, error: cError } = useCandidates()
+  const { jobs, loading: jLoading } = useJobs()
+  const { applications, loading: aLoading } = useAllApplications(jobs)
 
-  const filtered = MOCK_CANDIDATES.filter(c => {
-    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
+  const [search, setSearch]       = useState('')
+  const [sourceFilter, setSource] = useState('')
+  const [stageFilter, setStage]   = useState('')
+  const [scoreFilter, setScore]   = useState('')
+
+  const loading = cLoading || jLoading || aLoading
+
+  // Build a lookup: candidateId → best application (highest ai_score)
+  const appByCandidateId = applications.reduce<Record<string, ApiApplication>>((acc, app) => {
+    const existing = acc[app.candidate_id]
+    if (!existing || (app.ai_score ?? 0) > (existing.ai_score ?? 0)) {
+      acc[app.candidate_id] = app
+    }
+    return acc
+  }, {})
+
+  const filtered = candidates.filter((c: ApiCandidate) => {
+    const app = appByCandidateId[c.id]
+    const score = app?.ai_score ?? 0
+    const stage = app?.current_stage ?? 'sourced'
+
+    const matchSearch =
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.email.toLowerCase().includes(search.toLowerCase()) ||
       c.title.toLowerCase().includes(search.toLowerCase()) ||
-      c.skills.some(s => s.toLowerCase().includes(search.toLowerCase()))
-    const matchStage = !stageFilter || c.stage === stageFilter
+      c.skills.some((s) => s.toLowerCase().includes(search.toLowerCase()))
     const matchSource = !sourceFilter || c.source === sourceFilter
-    const matchScore = !scoreFilter || c.matchScore >= parseInt(scoreFilter)
-    return matchSearch && matchStage && matchSource && matchScore
+    const matchStage  = !stageFilter  || stage === stageFilter
+    const matchScore  = !scoreFilter  || score >= parseInt(scoreFilter)
+    return matchSearch && matchSource && matchStage && matchScore
   })
+
+  const aiLabelColor: Record<string, string> = {
+    strong_fit: 'bg-green-50 text-green-700 border-green-200',
+    good_fit:   'bg-blue-50 text-blue-700 border-blue-200',
+    reserve:    'bg-amber-50 text-amber-700 border-amber-200',
+  }
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-neutral-950 text-xl font-semibold">Candidates</h1>
-          <p className="text-neutral-400 text-sm mt-0.5">{MOCK_CANDIDATES.length} total in database</p>
+          <p className="text-neutral-400 text-sm mt-0.5">
+            {loading ? 'Loading…' : `${candidates.length} total in database`}
+          </p>
         </div>
         <button className="flex items-center gap-2 bg-neutral-950 hover:bg-neutral-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
           <Plus className="w-4 h-4" />
@@ -66,12 +97,21 @@ export default function CandidatesPage() {
       </div>
 
       <div className="flex items-center gap-2.5 flex-wrap">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search by name, skills, email..." className="w-72" />
-        <FilterDropdown label="Stage" options={stageOptions} value={stageFilter} onChange={setStageFilter} />
-        <FilterDropdown label="Source" options={sourceOptions} value={sourceFilter} onChange={setSourceFilter} />
-        <FilterDropdown label="AI Score" options={scoreOptions} value={scoreFilter} onChange={setScoreFilter} />
-        <span className="text-neutral-400 text-sm ml-auto">{filtered.length} candidates</span>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search by name, skills, email…" className="w-72" />
+        <FilterDropdown label="Source" options={sourceOptions} value={sourceFilter} onChange={setSource} />
+        <FilterDropdown label="Stage"  options={stageOptions}  value={stageFilter}  onChange={setStage} />
+        <FilterDropdown label="AI Score" options={scoreOptions} value={scoreFilter} onChange={setScore} />
+        <span className="text-neutral-400 text-sm ml-auto">
+          {loading ? '—' : `${filtered.length} candidate${filtered.length !== 1 ? 's' : ''}`}
+        </span>
       </div>
+
+      {cError && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {cError}
+        </div>
+      )}
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -79,72 +119,120 @@ export default function CandidatesPage() {
         transition={{ delay: 0.1 }}
         className="bg-white border border-neutral-200 rounded-xl overflow-hidden"
       >
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-neutral-100">
-              {['Candidate', 'Skills', 'Exp', 'AI Match', 'Stage', 'Source', 'Updated', ''].map(h => (
-                <th key={h} className="text-left px-5 py-3 text-xs font-medium text-neutral-400 uppercase tracking-wider">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-100">
-            {filtered.map((candidate, i) => (
-              <motion.tr
-                key={candidate.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.04 }}
-                className="hover:bg-neutral-50 transition-colors group"
-              >
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-neutral-950 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                      {getInitials(candidate.name)}
-                    </div>
-                    <div>
-                      <Link href={`/candidates/${candidate.id}`}>
-                        <p className="text-neutral-900 text-sm font-medium hover:text-accent transition-colors">{candidate.name}</p>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-20 text-neutral-400 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading candidates…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-neutral-400 text-sm gap-2">
+            <span>No candidates match your filters.</span>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-neutral-100">
+                {['Candidate', 'Skills', 'Exp', 'AI Score', 'Stage', 'Source', 'Applied', ''].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-medium text-neutral-400 uppercase tracking-wider">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {filtered.map((candidate, i) => {
+                const app = appByCandidateId[candidate.id]
+                const score = app?.ai_score ?? null
+                const stage = app?.current_stage ?? 'sourced'
+                const label = app?.ai_label ?? null
+
+                return (
+                  <motion.tr
+                    key={candidate.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.04 }}
+                    className="hover:bg-neutral-50 transition-colors group"
+                  >
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-neutral-950 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                          {getInitials(candidate.name)}
+                        </div>
+                        <div>
+                          <Link href={`/candidates/${candidate.id}`}>
+                            <p className="text-neutral-900 text-sm font-medium hover:text-indigo-600 transition-colors">
+                              {candidate.name}
+                            </p>
+                          </Link>
+                          <p className="text-neutral-400 text-xs">{candidate.email}</p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-3.5">
+                      <div className="flex flex-wrap gap-1 max-w-[200px]">
+                        {candidate.skills.slice(0, 3).map((skill) => (
+                          <span key={skill} className="px-1.5 py-0.5 rounded text-xs bg-neutral-100 text-neutral-600 border border-neutral-200">
+                            {skill}
+                          </span>
+                        ))}
+                        {candidate.skills.length > 3 && (
+                          <span className="px-1.5 py-0.5 rounded text-xs text-neutral-400">
+                            +{candidate.skills.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-1 text-neutral-500 text-sm">
+                        <Briefcase className="w-3.5 h-3.5 text-neutral-400" />
+                        {candidate.experience}y
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-3.5">
+                      {score !== null ? (
+                        <div className="flex items-center gap-1.5">
+                          <Star className="w-3.5 h-3.5 text-neutral-300" />
+                          <span className={cn('text-sm font-semibold px-2 py-0.5 rounded-md border', getMatchScoreBg(score))}>
+                            {score}%
+                          </span>
+                          {label && (
+                            <span className={cn('text-xs px-1.5 py-0.5 rounded-full border capitalize', aiLabelColor[label] ?? 'bg-neutral-100 text-neutral-500 border-neutral-200')}>
+                              {label.replace('_', ' ')}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-neutral-300 text-sm">—</span>
+                      )}
+                    </td>
+
+                    <td className="px-5 py-3.5">
+                      <StatusBadge status={stage} type="stage" />
+                    </td>
+
+                    <td className="px-5 py-3.5">
+                      <span className="text-neutral-500 text-sm capitalize">{candidate.source}</span>
+                    </td>
+
+                    <td className="px-5 py-3.5">
+                      <span className="text-neutral-400 text-sm">{formatRelativeTime(candidate.created_at)}</span>
+                    </td>
+
+                    <td className="px-5 py-3.5">
+                      <Link href={`/candidates/${candidate.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ChevronRight className="w-4 h-4 text-neutral-400" />
                       </Link>
-                      <p className="text-neutral-400 text-xs">{candidate.email}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-5 py-3.5">
-                  <div className="flex flex-wrap gap-1 max-w-[200px]">
-                    {candidate.skills.slice(0, 3).map(skill => (
-                      <span key={skill} className="px-1.5 py-0.5 rounded text-xs bg-neutral-100 text-neutral-600 border border-neutral-200">{skill}</span>
-                    ))}
-                    {candidate.skills.length > 3 && (
-                      <span className="px-1.5 py-0.5 rounded text-xs text-neutral-400">+{candidate.skills.length - 3}</span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-1 text-neutral-500 text-sm">
-                    <Briefcase className="w-3.5 h-3.5 text-neutral-400" />
-                    {candidate.experience}y
-                  </div>
-                </td>
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-1.5">
-                    <Star className="w-3.5 h-3.5 text-neutral-300" />
-                    <span className={cn('text-sm font-semibold px-2 py-0.5 rounded-md border', getMatchScoreBg(candidate.matchScore))}>
-                      {candidate.matchScore}%
-                    </span>
-                  </div>
-                </td>
-                <td className="px-5 py-3.5"><StatusBadge status={candidate.stage} type="stage" /></td>
-                <td className="px-5 py-3.5"><span className="text-neutral-500 text-sm capitalize">{candidate.source}</span></td>
-                <td className="px-5 py-3.5"><span className="text-neutral-400 text-sm">{formatRelativeTime(candidate.updatedAt)}</span></td>
-                <td className="px-5 py-3.5">
-                  <Link href={`/candidates/${candidate.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ChevronRight className="w-4 h-4 text-neutral-400" />
-                  </Link>
-                </td>
-              </motion.tr>
-            ))}
-          </tbody>
-        </table>
+                    </td>
+                  </motion.tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </motion.div>
     </div>
   )

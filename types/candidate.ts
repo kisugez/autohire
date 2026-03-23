@@ -61,3 +61,19 @@ export interface Interview {
   feedback?: string
   rating?: number
 }
+
+// ── Backend API shape ─────────────────────────────────────────────
+export interface ApiCandidate {
+  id: string
+  org_id: string
+  email: string
+  name: string
+  phone: string | null
+  title: string
+  company: string | null
+  location: string
+  experience: number
+  skills: string[]
+  source: CandidateSource
+  created_at: string
+}
