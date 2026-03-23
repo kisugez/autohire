@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/auth-context'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -32,11 +33,16 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const { user } = useAuth()
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard'
     return pathname.startsWith(href)
   }
+
+  // Derive org initials from org_id or fallback to user initials
+  const orgLabel = user?.org_id ? user.org_id.slice(0, 2).toUpperCase() : 'AC'
+  const planLabel = user?.role === 'admin' ? 'Pro Plan' : 'Member'
 
   return (
     <aside className="fixed left-0 top-0 h-full w-60 bg-neutral-50 border-r border-neutral-100 flex flex-col z-40">
@@ -90,16 +96,20 @@ export default function Sidebar() {
 
       {/* Footer / Workspace */}
       <div className="px-3 py-3 border-t border-neutral-100">
-        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-white/70 cursor-pointer transition-colors group">
-          <div className="w-6 h-6 rounded-md bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-            AC
+        <Link href="/settings">
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-white/70 cursor-pointer transition-colors group">
+            <div className="w-6 h-6 rounded-md bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+              {orgLabel}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-neutral-800 text-xs font-medium truncate">
+                {user?.org_id ?? 'My Organisation'}
+              </div>
+              <div className="text-neutral-400 text-[10px] capitalize">{planLabel}</div>
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-neutral-300 group-hover:text-neutral-500 transition-colors flex-shrink-0" />
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-neutral-800 text-xs font-medium truncate">Acme Corp</div>
-            <div className="text-neutral-400 text-[10px]">Pro Plan</div>
-          </div>
-          <ChevronRight className="w-3.5 h-3.5 text-neutral-300 group-hover:text-neutral-500 transition-colors flex-shrink-0" />
-        </div>
+        </Link>
       </div>
     </aside>
   )
