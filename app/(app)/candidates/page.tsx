@@ -68,7 +68,7 @@ export default function CandidatesPage() {
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.email.toLowerCase().includes(search.toLowerCase()) ||
       c.title.toLowerCase().includes(search.toLowerCase()) ||
-      c.skills.some((s) => s.toLowerCase().includes(search.toLowerCase()))
+      (c.skills ?? []).some((s) => s.toLowerCase().includes(search.toLowerCase()))
     const matchSource = !sourceFilter || c.source === sourceFilter
     const matchStage  = !stageFilter  || stage === stageFilter
     const matchScore  = !scoreFilter  || score >= parseInt(scoreFilter)
@@ -172,14 +172,14 @@ export default function CandidatesPage() {
 
                     <td className="px-5 py-3.5">
                       <div className="flex flex-wrap gap-1 max-w-[200px]">
-                        {candidate.skills.slice(0, 3).map((skill) => (
+                        {(candidate.skills ?? []).slice(0, 3).map((skill) => (
                           <span key={skill} className="px-1.5 py-0.5 rounded text-xs bg-neutral-100 text-neutral-600 border border-neutral-200">
                             {skill}
                           </span>
                         ))}
-                        {candidate.skills.length > 3 && (
+                        {(candidate.skills ?? []).length > 3 && (
                           <span className="px-1.5 py-0.5 rounded text-xs text-neutral-400">
-                            +{candidate.skills.length - 3}
+                            +{(candidate.skills ?? []).length - 3}
                           </span>
                         )}
                       </div>

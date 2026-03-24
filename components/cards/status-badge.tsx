@@ -1,7 +1,8 @@
 import { cn } from '@/lib/utils'
 import { STAGE_COLORS, STATUS_COLORS } from '@/lib/constants'
 import { CandidateStage } from '@/types/candidate'
-import { JobStatus, AutomationStatus } from '@/types/job'
+import { JobStatus } from '@/types/job'
+import { AutomationStatus } from '@/types/automation'
 
 interface StatusBadgeProps {
   status: CandidateStage | JobStatus | AutomationStatus | string

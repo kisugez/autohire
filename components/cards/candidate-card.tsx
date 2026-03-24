@@ -58,7 +58,7 @@ export default function CandidateCard({ candidate, isDragging }: CandidateCardPr
       </div>
 
       <div className="flex flex-wrap gap-1 mb-3">
-        {candidate.skills.slice(0, 3).map((skill) => (
+        {(candidate.skills ?? []).slice(0, 3).map((skill) => (
           <span
             key={skill}
             className="px-1.5 py-0.5 rounded text-xs bg-[#1F2937] text-[#9CA3AF] border border-[#374151]"
@@ -66,16 +66,16 @@ export default function CandidateCard({ candidate, isDragging }: CandidateCardPr
             {skill}
           </span>
         ))}
-        {candidate.skills.length > 3 && (
+        {(candidate.skills ?? []).length > 3 && (
           <span className="px-1.5 py-0.5 rounded text-xs bg-[#1F2937] text-[#6B7280]">
-            +{candidate.skills.length - 3}
+            +{(candidate.skills ?? []).length - 3}
           </span>
         )}
       </div>
 
       <div className="flex items-center justify-between">
-        {candidate.tags.length > 0 && (
-          <span className="text-xs text-[#6366F1] font-medium">{candidate.tags[0]}</span>
+        {(candidate.tags ?? []).length > 0 && (
+          <span className="text-xs text-[#6366F1] font-medium">{(candidate.tags ?? [])[0]}</span>
         )}
         <span className="text-xs text-[#6B7280] ml-auto">{formatRelativeTime(candidate.updatedAt)}</span>
       </div>
