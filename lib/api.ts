@@ -1,6 +1,5 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios'
 
-// ── Token helpers ────────────────────────────────────────────────────────────
 export const TOKEN_KEY = 'access_token'
 export const REFRESH_KEY = 'refresh_token'
 
@@ -14,25 +13,21 @@ export const tokenStorage = {
   set: (access: string, refresh: string) => {
     localStorage.setItem(TOKEN_KEY, access)
     localStorage.setItem(REFRESH_KEY, refresh)
-    // Mirror into cookie so Next.js middleware can read it (Edge has no localStorage)
     document.cookie = `${TOKEN_KEY}=${access}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`
   },
   clear: () => {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(REFRESH_KEY)
-    // Expire the cookie immediately
     document.cookie = `${TOKEN_KEY}=; path=/; max-age=0; SameSite=Lax`
   },
 }
 
-// ── Axios instance ───────────────────────────────────────────────────────────
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000',
   headers: { 'Content-Type': 'application/json' },
   timeout: 15_000,
 })
 
-// ── Request interceptor — attach Bearer token ────────────────────────────────
 api.interceptors.request.use(
   (config) => {
     const token = tokenStorage.getAccess()
@@ -44,7 +39,6 @@ api.interceptors.request.use(
   (error) => Promise.reject(error),
 )
 
-// ── Response interceptor — handle 401 globally ──────────────────────────────
 api.interceptors.response.use(
   (res: AxiosResponse) => res,
   (error) => {
@@ -58,7 +52,6 @@ api.interceptors.response.use(
   },
 )
 
-// ── Typed helper wrappers ────────────────────────────────────────────────────
 const get = <T = unknown>(url: string, config?: AxiosRequestConfig) =>
   api.get<T>(url, config).then((r) => r.data)
 

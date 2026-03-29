@@ -49,7 +49,7 @@ export function getMatchScoreBg(score: number): string {
   return 'bg-red-500/10 text-red-400 border-red-500/20'
 }
 
-export function formatSalary(min?: number, max?: number): string {
+export function formatSalary(min?: number | null, max?: number | null): string {
   if (!min && !max) return 'Competitive'
   const fmt = (n: number) => `$${(n / 1000).toFixed(0)}k`
   if (!max) return `${fmt(min!)}+`

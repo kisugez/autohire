@@ -22,16 +22,13 @@ export function middleware(request: NextRequest) {
   const isProtected = PROTECTED.some((p) => pathname === p || pathname.startsWith(`${p}/`))
   const isAuthRoute = AUTH_ROUTES.some((p) => pathname.startsWith(p))
 
-  // No token → bounce to /login
   if (!token && isProtected) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    // Preserve the original destination so we can redirect back after login
     url.searchParams.set('next', pathname)
     return NextResponse.redirect(url)
   }
 
-  // Has token → bounce away from /login and /register to /dashboard
   if (token && isAuthRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
@@ -43,6 +40,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Skip Next.js internals, static files, API routes, and the public /apply route
   matcher: ['/((?!api|_next/static|_next/image|apply|favicon.ico).*)'],
 }

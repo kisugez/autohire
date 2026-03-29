@@ -23,7 +23,7 @@ export interface Candidate {
   title: string
   company?: string
   location: string
-  skills: string[]
+  skills: string[] | null
   experience: number // years
   matchScore: number // 0-100
   stage: CandidateStage
@@ -62,7 +62,6 @@ export interface Interview {
   rating?: number
 }
 
-// ── Backend API shape ─────────────────────────────────────────────
 export interface ApiCandidate {
   id: string
   org_id: string
@@ -73,7 +72,13 @@ export interface ApiCandidate {
   company: string | null
   location: string
   experience: number
-  skills: string[]
+  skills: string[] | null
+  tags: string[] | null
   source: CandidateSource
+  linkedin_url: string | null
+  github_url: string | null
+  resume_url: string | null
+  notes: string | null
   created_at: string
+  updated_at: string
 }

@@ -34,23 +34,44 @@ export interface JobMetrics {
   avgTimeToHire: number
 }
 
+export interface FormField {
+  id: string
+  label: string
+  type: 'text' | 'email' | 'tel' | 'url' | 'textarea' | 'file'
+  required: boolean
+  enabled: boolean
+  placeholder?: string | null
+}
+
+export interface JobLinkResponse {
+  id: string
+  job_id: string
+  slug: string
+  source: string
+  label: string | null
+  active: boolean
+  click_count: number
+  form_schema: FormField[] | null
+  created_at: string
+}
+
 // ── Backend API shapes ────────────────────────────────────────────
 export interface ApiJob {
   id: string
   org_id: string
   title: string
   description: string | null
-  department: string
-  location: string
+  department: string | null
+  location: string | null
   remote: boolean
   job_type: JobType
   status: JobStatus
   requirements: { skills: string[]; min_experience?: number } | null
   salary_min: number | null
   salary_max: number | null
-  hiring_manager: string
+  hiring_manager: string | null
   min_ai_score: number
-  pipeline_stages: string[]
+  pipeline_stages: string[] | null
   created_at: string
   updated_at: string
 }
