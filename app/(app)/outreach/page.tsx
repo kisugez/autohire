@@ -1,53 +1,42 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Plus, Mail, Clock, CheckCircle, Eye, MessageSquare, Send, Calendar, Loader2, AlertCircle, Edit2, Trash2 } from 'lucide-react'
-import SearchInput from '@/components/cards/search-input'
-import FilterDropdown from '@/components/cards/filter-dropdown'
-import ComposeEmailModal from '@/components/candidates/compose-email-modal'
-import { formatDate, cn } from '@/lib/utils'
-import api, { get, post } from '@/lib/api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Search, RefreshCw, Send, Mail, Phone, Briefcase,
+  Loader2, AlertCircle, ArrowDown, ArrowUp,
+  Calendar, MessageSquare, X, Plus, UserPlus,
+} from 'lucide-react'
+import { formatRelativeTime, formatDate, getInitials, cn } from '@/lib/utils'
+import { get, post } from '@/lib/api'
 
-const statusOptions = [
-  { label: 'All Status', value: '' },
-  { label: 'Scheduled',  value: 'scheduled' },
-  { label: 'Sent',       value: 'sent' },
-  { label: 'Opened',     value: 'opened' },
-  { label: 'Replied',    value: 'replied' },
-  { label: 'Bounced',    value: 'bounced' },
-]
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const statusConfig: Record<string, { color: string; bg: string; icon: any }> = {
-  scheduled: { color: 'text-blue-600',    bg: 'bg-blue-50 border-blue-200',    icon: Calendar },
-  sent:      { color: 'text-neutral-500', bg: 'bg-neutral-100 border-neutral-200', icon: Send },
-  opened:    { color: 'text-amber-600',   bg: 'bg-amber-50 border-amber-200',   icon: Eye },
-  replied:   { color: 'text-green-600',   bg: 'bg-green-50 border-green-200',   icon: MessageSquare },
-  bounced:   { color: 'text-red-600',     bg: 'bg-red-50 border-red-200',       icon: Mail },
-}
-
-interface OutreachMessage {
+interface ContactedCandidate {
   id: string
   candidate_id: string
+  candidate_name: string
+  candidate_email: string
+  candidate_phone?: string
+  role?: string
+  source: 'applied' | 'sourced' | string
+  status: 'scheduled' | 'sent' | 'opened' | 'replied' | 'bounced' | string
   subject: string
-  status: string
-  scheduled_at: string | null
   sent_at: string | null
-  opened_at: string | null
-  replied_at: string | null
-  created_at: string
-  candidate_name?: string
-  candidate_email?: string
+  scheduled_at: string | null
+  applied_at?: string | null
+  unread?: number
 }
 
-interface OutreachTemplate {
+interface EmailMessage {
   id: string
-  name: string
+  direction: 'inbound' | 'outbound'
+  from_email: string
+  to_email: string
   subject: string
-  body: string
-  category: string
-  uses: number
-  created_at: string
+  body_text: string | null
+  sent_at: string
+  is_read: boolean
 }
 
 interface GoogleStatus {
@@ -56,361 +45,773 @@ interface GoogleStatus {
   gcal_connected: boolean
 }
 
-const TEMPLATE_DEFAULTS = [
-  { name: 'Initial Outreach',     category: 'outreach',   subject: 'Exciting opportunity at {{company}}', body: 'Hi {{name}},\n\nI came across your profile and was impressed by your background. We have an exciting opportunity that I think would be a great fit.\n\nWould you be open to a quick call this week?\n\nBest,\n{{sender}}' },
-  { name: '3-Day Follow-up',      category: 'followup',   subject: 'Following up — {{role}} opportunity', body: 'Hi {{name}},\n\nJust following up on my previous message about the {{role}} role. Still very interested in connecting!\n\nBest,\n{{sender}}' },
-  { name: 'Interview Invitation', category: 'interview',  subject: 'Interview Invitation — {{role}}',     body: 'Hi {{name}},\n\nThank you for your application. We\'d love to invite you to interview for the {{role}} position.\n\nPlease share your availability and we\'ll send a calendar invite.\n\nBest,\n{{sender}}' },
-  { name: 'Offer Letter',         category: 'offer',      subject: 'Offer of Employment — {{role}}',      body: 'Hi {{name}},\n\nWe are thrilled to offer you the {{role}} position. Please find the offer details attached.\n\nLooking forward to welcoming you!\n\nBest,\n{{sender}}' },
-  { name: 'Rejection (Kind)',     category: 'rejection',  subject: 'Update on your application',          body: 'Hi {{name}},\n\nThank you for your time and interest. After careful consideration we have decided to move forward with another candidate.\n\nWe were impressed with your background and will keep you in mind for future opportunities.\n\nBest,\n{{sender}}' },
-]
+interface ApiCandidate {
+  id: string
+  name: string
+  email: string
+  phone?: string
+  title?: string
+}
 
-export default function OutreachPage() {
-  const [search, setSearch]           = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [activeTab, setActiveTab]     = useState<'messages' | 'templates' | 'sequences'>('messages')
+interface ComposeTarget {
+  candidate_id: string
+  candidate_name: string
+  candidate_email: string
+}
 
-  const [messages, setMessages]       = useState<OutreachMessage[]>([])
-  const [templates, setTemplates]     = useState<OutreachTemplate[]>([])
-  const [loading, setLoading]         = useState(true)
-  const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false })
+// ─── Config ───────────────────────────────────────────────────────────────────
 
-  // Compose modal state
-  const [composeOpen, setComposeOpen] = useState(false)
-  const [composeCandidateId, setComposeCandidateId]     = useState('')
-  const [composeCandidateName, setComposeCandidateName] = useState('')
-  const [composeCandidateEmail, setComposeCandidateEmail] = useState('')
+const STATUS_CONFIG: Record<string, { label: string; dot: string; badge: string }> = {
+  scheduled: { label: 'Scheduled', dot: 'bg-blue-500',    badge: 'text-blue-700 bg-blue-50 border-blue-200' },
+  sent:      { label: 'Sent',      dot: 'bg-neutral-400', badge: 'text-neutral-500 bg-neutral-100 border-neutral-200' },
+  opened:    { label: 'Opened',    dot: 'bg-amber-500',   badge: 'text-amber-700 bg-amber-50 border-amber-200' },
+  replied:   { label: 'Replied',   dot: 'bg-green-500',   badge: 'text-green-700 bg-green-50 border-green-200' },
+  bounced:   { label: 'Bounced',   dot: 'bg-red-500',     badge: 'text-red-700 bg-red-50 border-red-200' },
+}
 
-  // Template form
-  const [editingTemplate, setEditingTemplate] = useState<OutreachTemplate | null>(null)
-  const [newTemplate, setNewTemplate] = useState(false)
-  const [templateForm, setTemplateForm] = useState({ name: '', subject: '', body: '', category: 'outreach' })
-  const [savingTemplate, setSavingTemplate] = useState(false)
-  const [templateError, setTemplateError] = useState<string | null>(null)
+const SOURCE_CONFIG: Record<string, { label: string; style: string }> = {
+  applied: { label: 'Applied', style: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
+  sourced: { label: 'Sourced', style: 'text-purple-700 bg-purple-50 border-purple-200' },
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function AvatarInitials({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
+  const sizeClass = { sm: 'w-8 h-8 text-xs', md: 'w-10 h-10 text-sm', lg: 'w-12 h-12 text-base' }[size]
+  const hue = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+  return (
+    <div
+      className={cn('rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0 select-none', sizeClass)}
+      style={{ background: `hsl(${hue},55%,48%)` }}
+    >
+      {getInitials(name)}
+    </div>
+  )
+}
+
+// Candidate picker – step 1 of new outreach
+function CandidatePickerModal({ open, onClose, onSelect }: {
+  open: boolean
+  onClose: () => void
+  onSelect: (c: ApiCandidate) => void
+}) {
+  const [candidates, setCandidates] = useState<ApiCandidate[]>([])
+  const [loading, setLoading]       = useState(false)
+  const [search, setSearch]         = useState('')
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      try {
-        const [msgs, tpls, gStatus] = await Promise.all([
-          get<OutreachMessage[]>('/api/v1/outreach/messages').catch(() => []),
-          get<OutreachTemplate[]>('/api/v1/outreach/templates').catch(() => []),
-          get<GoogleStatus>('/api/v1/google/status').catch(() => ({ gmail_connected: false, gcal_connected: false } as GoogleStatus)),
-        ])
-        setMessages(msgs)
-        setTemplates(tpls)
-        setGoogleStatus(gStatus)
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [])
+    if (!open) return
+    setLoading(true)
+    get<{ items: ApiCandidate[] }>('/api/v1/candidates?page=1&page_size=200')
+      .then(r => setCandidates(r.items ?? []))
+      .catch(() => setCandidates([]))
+      .finally(() => setLoading(false))
+  }, [open])
 
-  const filtered = messages.filter(m => {
-    const matchSearch = (m.subject ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      (m.candidate_name ?? '').toLowerCase().includes(search.toLowerCase())
-    const matchStatus = !statusFilter || m.status === statusFilter
-    return matchSearch && matchStatus
-  })
+  const filtered = candidates.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.email.toLowerCase().includes(search.toLowerCase())
+  )
 
-  const openCompose = (msg: OutreachMessage) => {
-    setComposeCandidateId(msg.candidate_id)
-    setComposeCandidateName(msg.candidate_name ?? '')
-    setComposeCandidateEmail(msg.candidate_email ?? '')
-    setComposeOpen(true)
-  }
-
-  const saveTemplate = async () => {
-    if (!templateForm.name || !templateForm.subject || !templateForm.body) {
-      setTemplateError('Name, subject and body are required.')
-      return
-    }
-    setSavingTemplate(true)
-    setTemplateError(null)
-    try {
-      if (editingTemplate) {
-        // In a real app: PATCH /api/v1/outreach/templates/:id
-        setTemplates(prev => prev.map(t => t.id === editingTemplate.id ? { ...t, ...templateForm } : t))
-      } else {
-        const created = await post<OutreachTemplate>('/api/v1/outreach/templates', templateForm)
-        setTemplates(prev => [created, ...prev])
-      }
-      setNewTemplate(false)
-      setEditingTemplate(null)
-      setTemplateForm({ name: '', subject: '', body: '', category: 'outreach' })
-    } catch {
-      setTemplateError('Failed to save template.')
-    } finally {
-      setSavingTemplate(false)
-    }
-  }
-
-  const seedTemplates = async () => {
-    setSavingTemplate(true)
-    try {
-      const created = await Promise.all(
-        TEMPLATE_DEFAULTS.map(t => post<OutreachTemplate>('/api/v1/outreach/templates', t).catch(() => null))
-      )
-      const valid = created.filter(Boolean) as OutreachTemplate[]
-      setTemplates(prev => [...valid, ...prev])
-    } finally {
-      setSavingTemplate(false)
-    }
-  }
-
-  // Stats
-  const sentCount     = messages.filter(m => ['sent','opened','replied'].includes(m.status)).length
-  const openedCount   = messages.filter(m => ['opened','replied'].includes(m.status)).length
-  const repliedCount  = messages.filter(m => m.status === 'replied').length
-  const scheduledCount = messages.filter(m => m.status === 'scheduled').length
-  const openRate  = sentCount > 0 ? Math.round((openedCount  / sentCount) * 100) : 0
-  const replyRate = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0
+  if (!open) return null
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-neutral-950 text-xl font-semibold">Outreach</h1>
-          <p className="text-neutral-400 text-sm mt-0.5">
-            Manage candidate communications
-            {googleStatus.gmail_connected && (
-              <span className="ml-2 inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" /> Gmail connected
-              </span>
-            )}
-          </p>
-        </div>
-        {!googleStatus.gmail_connected && (
-          <a href="/integrations" className="flex items-center gap-2 text-sm text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-colors font-medium">
-            <Mail className="w-4 h-4" /> Connect Gmail
-          </a>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          { label: 'Sent',       value: sentCount,     icon: Send,         color: 'text-indigo-600', bg: 'bg-indigo-50' },
-          { label: 'Open Rate',  value: `${openRate}%`, icon: Eye,         color: 'text-amber-600',  bg: 'bg-amber-50'  },
-          { label: 'Reply Rate', value: `${replyRate}%`, icon: MessageSquare, color: 'text-green-600', bg: 'bg-green-50' },
-          { label: 'Scheduled',  value: scheduledCount, icon: Clock,       color: 'text-blue-600',   bg: 'bg-blue-50'   },
-        ].map(stat => (
-          <div key={stat.label} className="bg-white border border-neutral-200 rounded-xl p-4 flex items-center gap-4">
-            <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center', stat.bg)}>
-              <stat.icon className={cn('w-4 h-4', stat.color)} />
-            </div>
-            <div>
-              <p className="text-neutral-400 text-xs">{stat.label}</p>
-              <p className="text-neutral-950 text-xl font-bold">{loading ? '—' : stat.value}</p>
-            </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 6 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97 }}
+        className="relative bg-white rounded-xl shadow-xl border border-neutral-200 w-[400px] max-h-[500px] flex flex-col z-10"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-3.5 h-3.5 text-neutral-500" />
+            <p className="text-neutral-900 text-sm font-semibold">New Outreach</p>
           </div>
-        ))}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 w-fit">
-        {(['messages', 'templates', 'sequences'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              'px-4 py-1.5 rounded-md text-sm font-medium capitalize transition-all',
-              activeTab === tab ? 'bg-white text-neutral-950 shadow-sm' : 'text-neutral-500 hover:text-neutral-700',
-            )}
-          >
-            {tab}
+          <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors">
+            <X className="w-3.5 h-3.5 text-neutral-400" />
           </button>
-        ))}
-      </div>
-
-      {/* Messages Tab */}
-      {activeTab === 'messages' && (
-        <>
-          <div className="flex items-center gap-3">
-            <SearchInput value={search} onChange={setSearch} placeholder="Search messages…" className="w-72" />
-            <FilterDropdown label="Status" options={statusOptions} value={statusFilter} onChange={setStatusFilter} />
+        </div>
+        <div className="px-4 py-2.5 border-b border-neutral-100">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+            <input
+              autoFocus
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or email…"
+              className="w-full bg-neutral-50 border border-neutral-200 rounded-lg pl-8 pr-3 py-2 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-300 focus:bg-white transition-all"
+            />
           </div>
-
-          {!googleStatus.gmail_connected && (
-            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>Connect your Gmail in <a href="/integrations" className="underline font-medium">Integrations</a> to send real emails and see them tracked here.</span>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-neutral-400 text-xs">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading candidates…
             </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-neutral-400 text-xs gap-2">
+              <Search className="w-5 h-5 text-neutral-200" />No candidates found
+            </div>
+          ) : (
+            filtered.map(c => (
+              <button
+                key={c.id}
+                onClick={() => { onSelect(c); setTimeout(onClose, 0) }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50 border-b border-neutral-50 transition-colors text-left"
+              >
+                <AvatarInitials name={c.name} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-neutral-900 text-xs font-medium truncate">{c.name}</p>
+                  <p className="text-neutral-400 text-[11px] truncate">{c.email}</p>
+                </div>
+                {c.title && (
+                  <span className="text-[10px] text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full truncate max-w-[90px]">{c.title}</span>
+                )}
+              </button>
+            ))
           )}
+        </div>
+      </motion.div>
+    </div>
+  )
+}
 
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-            className="bg-white border border-neutral-200 rounded-xl overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center gap-2 py-16 text-neutral-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-neutral-400 text-sm gap-2">
-                <Mail className="w-8 h-8 text-neutral-200" />
-                <span>No messages yet. Go to a candidate profile to send the first email.</span>
-              </div>
-            ) : (
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-neutral-100">
-                    {['Candidate', 'Subject', 'Status', 'Sent', 'Opened', 'Replied', ''].map(h => (
-                      <th key={h} className="text-left px-5 py-3.5 text-xs font-medium text-neutral-400 uppercase tracking-wider">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {filtered.map((msg, i) => {
-                    const config = statusConfig[msg.status] ?? statusConfig.sent
-                    const StatusIcon = config.icon
-                    return (
-                      <motion.tr key={msg.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }}
-                        className="hover:bg-neutral-50 transition-colors group">
-                        <td className="px-5 py-3.5">
-                          <p className="text-neutral-900 text-sm font-medium">{msg.candidate_name ?? '—'}</p>
-                          <p className="text-neutral-400 text-xs">{msg.candidate_email ?? ''}</p>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <p className="text-neutral-600 text-sm truncate max-w-[260px]">{msg.subject}</p>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <span className={cn('inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md border capitalize', config.bg, config.color)}>
-                            <StatusIcon className="w-3 h-3" /> {msg.status}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-neutral-500 text-sm">{msg.sent_at ? formatDate(msg.sent_at) : msg.scheduled_at ? `Scheduled ${formatDate(msg.scheduled_at)}` : '—'}</td>
-                        <td className="px-5 py-3.5 text-neutral-500 text-sm">{msg.opened_at ? formatDate(msg.opened_at) : '—'}</td>
-                        <td className="px-5 py-3.5 text-neutral-500 text-sm">{msg.replied_at ? formatDate(msg.replied_at) : '—'}</td>
-                        <td className="px-5 py-3.5">
-                          <button onClick={() => openCompose(msg)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
-                            <Send className="w-3.5 h-3.5" /> Reply
-                          </button>
-                        </td>
-                      </motion.tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
-          </motion.div>
-        </>
-      )}
+// Compose email – step 2 of new outreach
+function ComposeModal({ target, googleStatus, onClose, onSent }: {
+  target: ComposeTarget
+  googleStatus: GoogleStatus
+  onClose: () => void
+  onSent: () => void
+}) {
+  const [subject, setSubject] = useState('')
+  const [body, setBody]       = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError]     = useState<string | null>(null)
 
-      {/* Templates Tab */}
-      {activeTab === 'templates' && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <button onClick={() => { setNewTemplate(true); setEditingTemplate(null); setTemplateForm({ name: '', subject: '', body: '', category: 'outreach' }) }}
-              className="flex items-center gap-2 bg-neutral-950 hover:bg-neutral-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-              <Plus className="w-4 h-4" /> New Template
+  const send = async () => {
+    if (!subject.trim() || !body.trim()) return
+    setSending(true); setError(null)
+    try {
+      await post('/api/v1/outreach/send', { candidate_id: target.candidate_id, candidate_email: target.candidate_email, subject, body })
+      onSent()
+    } catch { setError('Failed to send. Check your Gmail connection.') }
+    finally { setSending(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 6 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="relative bg-white rounded-xl shadow-xl border border-neutral-200 w-[460px] flex flex-col z-10"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+          <div className="flex items-center gap-2.5">
+            <AvatarInitials name={target.candidate_name} size="sm" />
+            <div>
+              <p className="text-neutral-900 text-xs font-semibold">{target.candidate_name}</p>
+              <p className="text-neutral-400 text-[11px]">{target.candidate_email}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors">
+            <X className="w-3.5 h-3.5 text-neutral-400" />
+          </button>
+        </div>
+        <div className="px-4 py-3 space-y-2.5">
+          <div className="flex items-center gap-2 border-b border-neutral-100 pb-2.5">
+            <span className="text-neutral-400 text-[11px] w-14 flex-shrink-0">Subject</span>
+            <input
+              autoFocus
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              placeholder="Email subject…"
+              className="flex-1 text-xs text-neutral-800 bg-transparent placeholder-neutral-300 focus:outline-none"
+            />
+          </div>
+          <textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            placeholder={`Write to ${target.candidate_name}…`}
+            rows={6}
+            className="w-full text-xs text-neutral-800 bg-transparent placeholder-neutral-300 focus:outline-none resize-none"
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() }}
+          />
+        </div>
+        {error && (
+          <div className="mx-4 mb-2 flex items-center gap-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <AlertCircle className="w-3 h-3 flex-shrink-0" /> {error}
+          </div>
+        )}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-100">
+          <div className="flex items-center gap-1.5">
+            <GmailIcon />
+            {googleStatus.gmail_connected
+              ? <span className="text-[11px] text-neutral-500">via {googleStatus.gmail_email ?? 'Gmail'}</span>
+              : <span className="text-[11px] text-amber-600">Gmail not connected</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-neutral-300">⌘↵</span>
+            <button
+              onClick={send}
+              disabled={sending || !body.trim() || !subject.trim()}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                subject.trim() && body.trim() ? 'bg-neutral-950 text-white hover:bg-neutral-800' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed')}
+            >
+              {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+              {sending ? 'Sending…' : 'Send'}
             </button>
-            {templates.length === 0 && (
-              <button onClick={seedTemplates} disabled={savingTemplate}
-                className="flex items-center gap-2 text-sm text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-colors font-medium">
-                {savingTemplate ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Load Default Templates
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+function GmailIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none">
+      <path d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6z" fill="#fff" stroke="#e0e0e0" strokeWidth="1"/>
+      <path d="M22 6l-10 7L2 6" stroke="#EA4335" strokeWidth="1.5" fill="none"/>
+      <path d="M2 6l10 7" stroke="#34A853" strokeWidth="1" fill="none"/>
+      <path d="M22 6l-10 7" stroke="#FBBC05" strokeWidth="1" fill="none"/>
+    </svg>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function OutreachPage() {
+  const [contacts, setContacts]         = useState<ContactedCandidate[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [search, setSearch]             = useState('')
+  const [selected, setSelected]         = useState<ContactedCandidate | null>(null)
+
+  const [messages, setMessages]         = useState<EmailMessage[]>([])
+  const [convLoading, setConvLoading]   = useState(false)
+  const [syncing, setSyncing]           = useState(false)
+
+  const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false })
+
+  const [pickerOpen, setPickerOpen]     = useState(false)
+  const [composeTarget, setComposeTarget] = useState<ComposeTarget | null>(null)
+
+  const [replySubject, setReplySubject] = useState('')
+  const [replyBody, setReplyBody]       = useState('')
+  const [sending, setSending]           = useState(false)
+  const [sendError, setSendError]       = useState<string | null>(null)
+
+  // All candidates for sidebar search
+  const [allCandidates, setAllCandidates] = useState<ApiCandidate[]>([])
+
+  const threadRef = useRef<HTMLDivElement>(null)
+
+  const loadContacts = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [msgs, gStatus, allC] = await Promise.all([
+        get<ContactedCandidate[]>('/api/v1/outreach/messages').catch(() => [] as ContactedCandidate[]),
+        get<GoogleStatus>('/api/v1/google/status').catch(() => ({ gmail_connected: false, gcal_connected: false } as GoogleStatus)),
+        get<{ items: ApiCandidate[] }>('/api/v1/candidates?page=1&page_size=500').then(r => r.items ?? []).catch(() => [] as ApiCandidate[]),
+      ])
+      setContacts(msgs)
+      setGoogleStatus(gStatus)
+      setAllCandidates(allC)
+      if (msgs.length > 0 && !selected) setSelected(msgs[0])
+    } finally {
+      setLoading(false)
+    }
+  }, []) // eslint-disable-line
+
+  useEffect(() => { loadContacts() }, [loadContacts])
+
+  const fetchConversation = useCallback(async (candidateId: string) => {
+    setConvLoading(true); setMessages([])
+    try {
+      const conv = await get<{ messages: EmailMessage[] }>(`/api/v1/conversations/${candidateId}`)
+      setMessages(conv.messages ?? [])
+    } catch { setMessages([]) }
+    finally { setConvLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    if (!selected) return
+    fetchConversation(selected.candidate_id)
+    setReplySubject(`Re: ${selected.subject}`)
+    setReplyBody('')
+    setSendError(null)
+  }, [selected, fetchConversation])
+
+  useEffect(() => {
+    if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight
+  }, [messages])
+
+  const syncConversation = async () => {
+    if (!selected) return
+    setSyncing(true)
+    try { await post(`/api/v1/conversations/${selected.candidate_id}/sync`, {}); await fetchConversation(selected.candidate_id) }
+    finally { setSyncing(false) }
+  }
+
+  const sendReply = async () => {
+    if (!selected || !replyBody.trim() || !replySubject.trim()) return
+    setSending(true); setSendError(null)
+    try {
+      await post('/api/v1/outreach/send', { candidate_id: selected.candidate_id, candidate_email: selected.candidate_email, subject: replySubject, body: replyBody })
+      setReplyBody('')
+      await fetchConversation(selected.candidate_id)
+    } catch { setSendError('Failed to send. Check your Gmail connection.') }
+    finally { setSending(false) }
+  }
+
+  // When searching: show matching contacts OR uncontacted candidates that match
+  const contactedIds = new Set(contacts.map(c => c.candidate_id))
+  const q = search.toLowerCase()
+  const filteredContacts = search
+    ? contacts.filter(c =>
+        (c.candidate_name ?? '').toLowerCase().includes(q) ||
+        (c.subject ?? '').toLowerCase().includes(q) ||
+        (c.candidate_email ?? '').toLowerCase().includes(q)
+      )
+    : contacts
+  // Candidates not yet in contacts list that match the search query
+  const unmatchedCandidates: ApiCandidate[] = search
+    ? allCandidates.filter(c =>
+        !contactedIds.has(c.id) && (
+          c.name.toLowerCase().includes(q) ||
+          c.email.toLowerCase().includes(q)
+        )
+      ).slice(0, 8)
+    : []
+
+  const statusCfg = selected ? (STATUS_CONFIG[selected.status] ?? STATUS_CONFIG.sent) : null
+  const sourceCfg = selected ? (SOURCE_CONFIG[selected.source] ?? SOURCE_CONFIG.sourced) : null
+
+  const timelineRows = selected ? [
+    selected.applied_at ? { label: 'Applied',    value: selected.applied_at, icon: UserPlus, iconColor: 'text-indigo-500', bg: 'bg-indigo-50' } : null,
+    selected.sent_at    ? { label: 'Email sent',  value: selected.sent_at,    icon: Send,     iconColor: 'text-neutral-500', bg: 'bg-neutral-100' } : null,
+    (!selected.sent_at && selected.scheduled_at) ? { label: 'Scheduled', value: selected.scheduled_at!, icon: Calendar, iconColor: 'text-blue-500', bg: 'bg-blue-50' } : null,
+  ].filter(Boolean) as { label: string; value: string; icon: any; iconColor: string; bg: string }[]
+  : []
+
+  return (
+    // -mx-7 -mt-[67px] cancels layout px-7 pt-[67px] exactly; height fills viewport below the topbar
+    <div className="fixed flex overflow-hidden bg-white" style={{ top: 67, left: 220, right: 0, bottom: 0 }}>
+
+      {/* ── LEFT SIDEBAR ─────────────────────────────────────── */}
+      <div className="w-[260px] flex-shrink-0 flex flex-col border-r border-neutral-100">
+        <div className="px-4 pt-4 pb-3 border-b border-neutral-100">
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-neutral-900 text-sm font-semibold">Outreach</h1>
+            <button
+              onClick={() => setPickerOpen(true)}
+              className="w-7 h-7 rounded-lg bg-neutral-950 text-white flex items-center justify-center hover:bg-neutral-800 transition-colors"
+              title="New outreach"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="w-full bg-neutral-50 border border-neutral-200 rounded-lg pl-8 pr-7 py-1.5 text-xs text-neutral-700 placeholder-neutral-400 focus:outline-none focus:border-neutral-300 focus:bg-white transition-all"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                <X className="w-3 h-3 text-neutral-400" />
               </button>
             )}
           </div>
-
-          {(newTemplate || editingTemplate) && (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-              className="bg-white border border-neutral-200 rounded-xl p-5 space-y-3">
-              <h3 className="text-neutral-900 text-sm font-semibold">{editingTemplate ? 'Edit Template' : 'New Template'}</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-600 mb-1.5">Name</label>
-                  <input className="w-full bg-neutral-50 border border-neutral-200 text-neutral-900 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all"
-                    value={templateForm.name} onChange={e => setTemplateForm(p => ({ ...p, name: e.target.value }))} placeholder="Template name" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-600 mb-1.5">Category</label>
-                  <select className="w-full bg-neutral-50 border border-neutral-200 text-neutral-900 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all"
-                    value={templateForm.category} onChange={e => setTemplateForm(p => ({ ...p, category: e.target.value }))}>
-                    {['outreach','followup','interview','offer','rejection'].map(c => <option key={c} value={c} className="capitalize">{c}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-neutral-600 mb-1.5">Subject</label>
-                <input className="w-full bg-neutral-50 border border-neutral-200 text-neutral-900 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all"
-                  value={templateForm.subject} onChange={e => setTemplateForm(p => ({ ...p, subject: e.target.value }))} placeholder="Email subject — use {{name}}, {{role}}, {{company}}" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-neutral-600 mb-1.5">Body</label>
-                <textarea rows={7} className="w-full bg-neutral-50 border border-neutral-200 text-neutral-900 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all resize-none font-mono text-xs"
-                  value={templateForm.body} onChange={e => setTemplateForm(p => ({ ...p, body: e.target.value }))} placeholder="Email body — use {{name}}, {{role}}, {{company}}, {{sender}}" />
-                <p className="text-xs text-neutral-400 mt-1">Variables: {'{{name}} {{role}} {{company}} {{sender}}'}</p>
-              </div>
-              {templateError && <p className="text-xs text-red-600">{templateError}</p>}
-              <div className="flex items-center gap-2">
-                <button onClick={saveTemplate} disabled={savingTemplate}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 rounded-lg transition-colors">
-                  {savingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                  {editingTemplate ? 'Save Changes' : 'Create Template'}
-                </button>
-                <button onClick={() => { setNewTemplate(false); setEditingTemplate(null) }}
-                  className="px-4 py-2 text-sm text-neutral-600 border border-neutral-200 rounded-lg hover:border-neutral-300 transition-colors">
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-neutral-400 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading templates…
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              {templates.map((template, i) => (
-                <motion.div key={template.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-white border border-neutral-200 rounded-xl p-5 hover:border-neutral-300 transition-colors group">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0">
-                        <Mail className="w-4 h-4 text-indigo-600" />
-                      </div>
-                      <div>
-                        <p className="text-neutral-900 text-sm font-semibold">{template.name}</p>
-                        <span className="text-xs text-neutral-400 capitalize">{template.category}</span>
-                      </div>
-                    </div>
-                    <button onClick={() => { setEditingTemplate(template); setNewTemplate(false); setTemplateForm({ name: template.name, subject: template.subject, body: template.body, category: template.category }) }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100">
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-neutral-500 mb-2 font-medium truncate">{template.subject}</p>
-                  <p className="text-xs text-neutral-400 line-clamp-2 leading-relaxed">{template.body}</p>
-                  <p className="text-xs text-neutral-300 mt-3">{template.uses} uses</p>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Sequences Tab */}
-      {activeTab === 'sequences' && (
-        <div className="space-y-3">
-          <div className="flex flex-col items-center justify-center py-16 text-neutral-400 text-sm gap-3 bg-white border border-neutral-200 rounded-xl">
-            <Mail className="w-8 h-8 text-neutral-200" />
-            <span>Sequences coming soon — create automated multi-step email campaigns.</span>
+          <div className="flex mt-2.5 gap-1 bg-neutral-100 rounded-lg p-0.5">
+            {['Active', 'Archive'].map(t => (
+              <button key={t} className={cn(
+                'flex-1 py-1 text-xs font-medium rounded-md transition-all',
+                t === 'Active' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
+              )}>
+                {t}{t === 'Active' && contacts.length > 0 && (
+                  <span className="ml-1 text-[10px] bg-neutral-200 text-neutral-600 rounded-full px-1.5 py-px">{contacts.length}</span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
-      )}
 
-      {/* Compose modal */}
-      <ComposeEmailModal
-        open={composeOpen}
-        onClose={() => setComposeOpen(false)}
-        candidateId={composeCandidateId}
-        candidateName={composeCandidateName}
-        candidateEmail={composeCandidateEmail}
-        gmailConnected={googleStatus.gmail_connected}
-        gmailEmail={googleStatus.gmail_email}
-      />
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-neutral-400 text-xs">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
+            </div>
+          ) : filteredContacts.length === 0 && unmatchedCandidates.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-neutral-400 text-xs gap-2">
+              <Mail className="w-6 h-6 text-neutral-200" />{search ? 'No results found' : 'No contacts yet'}
+            </div>
+          ) : (
+            <>
+              {/* Contacted people */}
+              {filteredContacts.map((c, i) => {
+                const cfg = STATUS_CONFIG[c.status] ?? STATUS_CONFIG.sent
+                const isActive = selected?.id === c.id
+                return (
+                  <motion.button
+                    key={c.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.03 }}
+                    onClick={() => setSelected(c)}
+                    className={cn(
+                      'w-full flex items-start gap-3 px-4 py-3 border-b border-neutral-50 text-left transition-colors',
+                      isActive ? 'bg-neutral-50' : 'hover:bg-neutral-50/70'
+                    )}
+                  >
+                    <div className="relative flex-shrink-0 mt-0.5">
+                      <AvatarInitials name={c.candidate_name} size="sm" />
+                      <span className={cn('absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white', cfg.dot)} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-neutral-900 text-xs font-semibold truncate">{c.candidate_name}</p>
+                        <span className="text-neutral-400 text-[10px] flex-shrink-0">
+                          {c.sent_at ? formatRelativeTime(c.sent_at) : c.scheduled_at ? formatRelativeTime(c.scheduled_at) : '—'}
+                        </span>
+                      </div>
+                      <p className="text-neutral-500 text-[11px] truncate mt-0.5">{c.subject}</p>
+                      {!!c.unread && (
+                        <span className="mt-1 inline-flex items-center justify-center min-w-[16px] h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold px-1">
+                          {c.unread}
+                        </span>
+                      )}
+                    </div>
+                  </motion.button>
+                )
+              })}
+
+              {/* Uncontacted candidates from DB matching the search */}
+              {unmatchedCandidates.length > 0 && (
+                <>
+                  <div className="px-4 py-1.5 bg-neutral-50 border-b border-neutral-100">
+                    <p className="text-neutral-400 text-[10px] uppercase tracking-wide font-medium">Candidates</p>
+                  </div>
+                  {unmatchedCandidates.map((c, i) => (
+                    <motion.button
+                      key={c.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: i * 0.03 }}
+                      onClick={() => {
+                        setComposeTarget({ candidate_id: c.id, candidate_name: c.name, candidate_email: c.email })
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 border-b border-neutral-50 text-left hover:bg-neutral-50/70 transition-colors"
+                    >
+                      <AvatarInitials name={c.name} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-neutral-900 text-xs font-semibold truncate">{c.name}</p>
+                        <p className="text-neutral-400 text-[11px] truncate">{c.email}</p>
+                      </div>
+                      <span className="text-[10px] text-indigo-500 flex-shrink-0 flex items-center gap-1">
+                        <Plus className="w-3 h-3" />
+                      </span>
+                    </motion.button>
+                  ))}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── CENTRE THREAD ────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {selected ? (
+          <>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-100 flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <AvatarInitials name={selected.candidate_name} size="sm" />
+                <div className="min-w-0">
+                  <p className="text-neutral-900 text-sm font-semibold truncate">{selected.candidate_name}</p>
+                  <p className="text-neutral-400 text-xs truncate">{selected.candidate_email}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {googleStatus.gmail_connected && (
+                  <button
+                    onClick={syncConversation}
+                    disabled={syncing}
+                    className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-800 border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 px-2.5 py-1.5 rounded-lg transition-colors"
+                  >
+                    <RefreshCw className={cn('w-3 h-3', syncing && 'animate-spin')} /> Sync
+                  </button>
+                )}
+                {googleStatus.gmail_connected ? (
+                  <span className="flex items-center gap-1 text-xs text-green-700 border border-green-200 bg-green-50 px-2.5 py-1.5 rounded-lg">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Gmail
+                  </span>
+                ) : (
+                  <a href="/integrations" className="flex items-center gap-1.5 text-xs text-amber-700 border border-amber-200 bg-amber-50 px-2.5 py-1.5 rounded-lg">
+                    <AlertCircle className="w-3 h-3" /> Connect Gmail
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Subject bar */}
+            <div className="px-5 py-2 bg-neutral-50/60 border-b border-neutral-100 flex-shrink-0">
+              <p className="text-neutral-400 text-[10px] uppercase tracking-wider font-medium">Subject</p>
+              <p className="text-neutral-800 text-xs font-medium mt-0.5">{selected.subject}</p>
+            </div>
+
+            {/* Thread */}
+            <div ref={threadRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              {convLoading ? (
+                <div className="flex items-center justify-center gap-2 py-12 text-neutral-400 text-xs">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading thread…
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-14 text-neutral-400 text-xs gap-2">
+                  <MessageSquare className="w-7 h-7 text-neutral-200" />
+                  No messages yet — send the first email below.
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 my-1">
+                    <div className="flex-1 h-px bg-neutral-100" />
+                    <span className="text-neutral-300 text-[10px]">Conversation started</span>
+                    <div className="flex-1 h-px bg-neutral-100" />
+                  </div>
+                  {messages.map(msg => {
+                    const isOut = msg.direction === 'outbound'
+                    return (
+                      <motion.div
+                        key={msg.id}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={cn('flex gap-2 items-end', isOut ? 'justify-end' : 'justify-start')}
+                      >
+                        {!isOut && <AvatarInitials name={selected.candidate_name} size="sm" />}
+                        <div className={cn(
+                          'max-w-[66%] rounded-xl px-4 py-3 text-xs border',
+                          isOut ? 'bg-neutral-950 text-white border-neutral-800' : 'bg-white text-neutral-800 border-neutral-200 shadow-sm'
+                        )}>
+                          <div className="flex items-center justify-between gap-3 mb-1.5">
+                            <span className="flex items-center gap-1 text-[10px] text-neutral-400">
+                              {isOut ? <><ArrowUp className="w-2.5 h-2.5" /> You</> : <><ArrowDown className="w-2.5 h-2.5" /> {selected.candidate_name}</>}
+                            </span>
+                            <span className={cn('text-[10px]', isOut ? 'text-neutral-500' : 'text-neutral-400')}>
+                              {formatRelativeTime(msg.sent_at)}
+                            </span>
+                          </div>
+                          <p className={cn('font-medium text-[11px] mb-1.5', isOut ? 'text-neutral-300' : 'text-neutral-500')}>{msg.subject}</p>
+                          <p className={cn('leading-relaxed whitespace-pre-wrap', isOut ? 'text-neutral-100' : 'text-neutral-700')}>{msg.body_text ?? ''}</p>
+                        </div>
+                        {isOut && (
+                          <div className="w-7 h-7 rounded-full bg-neutral-800 flex items-center justify-center text-[9px] text-white font-semibold flex-shrink-0">You</div>
+                        )}
+                      </motion.div>
+                    )
+                  })}
+                </>
+              )}
+            </div>
+
+            {/* Compose */}
+            <div className="border-t border-neutral-100 px-4 pt-3 pb-4 flex-shrink-0 space-y-2">
+              {sendError && (
+                <div className="flex items-center gap-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertCircle className="w-3 h-3 flex-shrink-0" /> {sendError}
+                </div>
+              )}
+              <div className="flex items-center gap-2 border-b border-neutral-100 pb-2">
+                <span className="text-neutral-400 text-[11px] w-12 flex-shrink-0">Subject</span>
+                <input
+                  value={replySubject}
+                  onChange={e => setReplySubject(e.target.value)}
+                  className="flex-1 bg-transparent text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none"
+                  placeholder="Email subject…"
+                />
+              </div>
+              <div className="bg-neutral-50 border border-neutral-200 rounded-xl overflow-hidden focus-within:border-neutral-300 focus-within:bg-white transition-all">
+                <textarea
+                  value={replyBody}
+                  onChange={e => setReplyBody(e.target.value)}
+                  placeholder={`Reply to ${selected.candidate_name}…`}
+                  rows={4}
+                  className="w-full bg-transparent px-4 pt-3 pb-2 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none resize-none"
+                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply() }}
+                />
+                <div className="flex items-center justify-between px-3 pb-2.5 pt-1 border-t border-neutral-100">
+                  <div className="flex items-center gap-1.5">
+                    <GmailIcon />
+                    {googleStatus.gmail_connected
+                      ? <span className="text-[10px] text-neutral-500">via Gmail</span>
+                      : <span className="text-[10px] text-amber-600">Gmail not connected</span>}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-neutral-300">⌘↵ to send</span>
+                    <button
+                      onClick={sendReply}
+                      disabled={sending || !replyBody.trim() || !replySubject.trim()}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                        replyBody.trim() && replySubject.trim() ? 'bg-neutral-950 text-white hover:bg-neutral-800' : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                      )}
+                    >
+                      {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                      {sending ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-neutral-400 gap-3">
+            <Mail className="w-8 h-8 text-neutral-200" />
+            <p className="text-xs">Select a contact to view the thread</p>
+            <button
+              onClick={() => setPickerOpen(true)}
+              className="flex items-center gap-2 text-xs text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> New outreach
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── RIGHT DETAILS PANEL ───────────────────────────────── */}
+      <div className="w-56 flex-shrink-0 border-l border-neutral-100 flex flex-col overflow-y-auto">
+        {selected ? (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={selected.id}
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center px-4 pt-6 pb-4 gap-3"
+            >
+              <AvatarInitials name={selected.candidate_name} size="lg" />
+              <div className="text-center">
+                <p className="text-neutral-900 text-sm font-semibold">{selected.candidate_name}</p>
+                <a href={`/candidates/${selected.candidate_id}`} className="text-indigo-600 text-[11px] hover:underline">
+                  View profile →
+                </a>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 justify-center">
+                {statusCfg && (
+                  <span className={cn('flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border', statusCfg.badge)}>
+                    <span className={cn('w-1.5 h-1.5 rounded-full', statusCfg.dot)} />
+                    {statusCfg.label}
+                  </span>
+                )}
+                {sourceCfg && (
+                  <span className={cn('text-[10px] font-medium px-2 py-0.5 rounded-full border', sourceCfg.style)}>
+                    {sourceCfg.label}
+                  </span>
+                )}
+              </div>
+
+              <div className="w-full border-t border-neutral-100 pt-4 space-y-3">
+
+                {/* Email */}
+                <div className="flex items-start gap-2.5">
+                  <div className="w-6 h-6 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Mail className="w-3 h-3 text-neutral-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-neutral-400 text-[10px] uppercase tracking-wide font-medium">Mail</p>
+                    <a href={`mailto:${selected.candidate_email}`} className="text-indigo-600 text-xs hover:underline truncate block">
+                      {selected.candidate_email}
+                    </a>
+                  </div>
+                </div>
+
+                {/* Phone — directly below email */}
+                {selected.candidate_phone && (
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Phone className="w-3 h-3 text-neutral-500" />
+                    </div>
+                    <div>
+                      <p className="text-neutral-400 text-[10px] uppercase tracking-wide font-medium">Phone</p>
+                      <a href={`tel:${selected.candidate_phone}`} className="text-neutral-700 text-xs hover:underline">
+                        {selected.candidate_phone}
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Role */}
+                {selected.role && (
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Briefcase className="w-3 h-3 text-neutral-500" />
+                    </div>
+                    <div>
+                      <p className="text-neutral-400 text-[10px] uppercase tracking-wide font-medium">Role</p>
+                      <p className="text-neutral-700 text-xs">{selected.role}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Timeline */}
+                {timelineRows.length > 0 && (
+                  <div className="border-t border-neutral-100 pt-3">
+                    <p className="text-neutral-400 text-[10px] uppercase tracking-wide font-medium mb-3">Timeline</p>
+                    <div className="relative">
+                      {timelineRows.length > 1 && (
+                        <div className="absolute left-[9px] top-3 bottom-3 w-px bg-neutral-100 z-0" />
+                      )}
+                      <div className="space-y-3">
+                        {timelineRows.map(row => (
+                          <div key={row.label} className="flex items-start gap-2.5 relative z-10">
+                            <div className={cn('w-[18px] h-[18px] rounded-full flex items-center justify-center flex-shrink-0 border-2 border-white', row.bg)}>
+                              <row.icon className={cn('w-2 h-2', row.iconColor)} />
+                            </div>
+                            <div>
+                              <p className="text-neutral-600 text-[11px] font-medium leading-tight">{row.label}</p>
+                              <p className="text-neutral-400 text-[10px]">{formatDate(row.value)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-neutral-300 text-xs text-center px-4">
+            Select a contact to see their details
+          </div>
+        )}
+      </div>
+
+      {/* ── Modals ────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {pickerOpen && (
+          <CandidatePickerModal
+            open={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            onSelect={c => setComposeTarget({ candidate_id: c.id, candidate_name: c.name, candidate_email: c.email })}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {composeTarget && (
+          <ComposeModal
+            target={composeTarget}
+            googleStatus={googleStatus}
+            onClose={() => setComposeTarget(null)}
+            onSent={async () => { setComposeTarget(null); await loadContacts() }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

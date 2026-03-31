@@ -8,10 +8,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen bg-neutral-50">
         <Sidebar />
         <Topbar />
-        <main className="ml-60 pt-14 min-h-screen">
-          <div className="p-6 max-w-[1600px]">
-            {children}
-          </div>
+        <main className="ml-[220px] pt-[67px] min-h-screen px-7 pb-12">
+          {children}
         </main>
       </div>
     </JobsProvider>

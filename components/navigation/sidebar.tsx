@@ -2,115 +2,197 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { motion } from 'framer-motion'
 import {
   LayoutDashboard,
+  Mail,
+  Calendar,
   Briefcase,
   Users,
+  ScanSearch,
+  FileText,
+  Puzzle,
+  BarChart3,
+  Settings,
   Kanban,
   Zap,
-  Mail,
-  BarChart3,
-  Puzzle,
-  Settings,
-  ChevronRight,
-  Sparkles,
+  BookMarked,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useAuth } from '@/lib/auth-context'
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/jobs', label: 'Jobs', icon: Briefcase },
-  { href: '/candidates', label: 'Candidates', icon: Users },
-  { href: '/pipeline', label: 'Pipeline', icon: Kanban },
+const topNavItems = [
+  { href: '/dashboard', label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/outreach',  label: 'Outreach',         icon: Mail },
+  { href: '/calendar',  label: 'Calendar & Todos', icon: Calendar },
+]
+
+const recruitmentItems = [
+  { href: '/jobs',         label: 'Jobs',         icon: Briefcase },
+  { href: '/candidates',   label: 'Candidates',   icon: Users },
   { href: '/automations', label: 'Automations', icon: Zap },
-  { href: '/outreach', label: 'Outreach', icon: Mail },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/shortlist', label: 'Shortlist', icon: BookMarked },
+  { href: '/sourcing',     label: 'Sourcing',      icon: ScanSearch },
+  { href: '/pipeline',     label: 'Pipeline',      icon: Kanban },
+]
+
+const organisationItems = [
   { href: '/integrations', label: 'Integrations', icon: Puzzle },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/analytics',    label: 'Analytics',    icon: BarChart3 },
+  { href: '/settings',     label: 'Settings',     icon: Settings },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const { user } = useAuth()
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard'
     return pathname.startsWith(href)
   }
 
-  // Derive org initials from org_id or fallback to user initials
-  const orgLabel = user?.org_id ? user.org_id.slice(0, 2).toUpperCase() : 'AC'
-  const planLabel = user?.role === 'admin' ? 'Pro Plan' : 'Member'
-
   return (
-    <aside className="fixed left-0 top-0 h-full w-60 bg-neutral-50 border-r border-neutral-100 flex flex-col z-40">
-      {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-4 border-b border-neutral-100">
-        <div className="w-7 h-7 rounded-lg bg-neutral-950 flex items-center justify-center">
-          <Sparkles className="w-3.5 h-3.5 text-white" />
-        </div>
-        <div>
-          <span className="text-neutral-950 font-semibold text-sm tracking-tight">AutoHyre</span>
-          <div className="text-neutral-400 text-[10px] leading-none mt-0.5">AI Recruiting OS</div>
-        </div>
+    <aside
+      style={{
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        height: '100%',
+        width: '220px',
+        background: '#1a1a1a',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 40,
+      }}
+    >
+      {/* ── Brand ── */}
+      <div style={{ padding: '24px 20px 18px' }}>
+        <span style={{
+          color: '#ffffff',
+          fontSize: '15px',
+          fontWeight: 700,
+          letterSpacing: '-0.01em',
+        }}>
+          AutoHyre
+        </span>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => {
-          const active = isActive(item.href)
-          const Icon = item.icon
+      {/* ── Divider ── */}
+      <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)' }} />
 
-          return (
-            <Link key={item.href} href={item.href}>
-              <motion.div
-                whileHover={{ x: 1 }}
-                whileTap={{ scale: 0.98 }}
-                className={cn(
-                  'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-100 cursor-pointer',
-                  active
-                    ? 'bg-white text-neutral-950 shadow-sm border border-neutral-200'
-                    : 'text-neutral-500 hover:text-neutral-800 hover:bg-white/70'
-                )}
-              >
-                <Icon
-                  className={cn(
-                    'w-4 h-4 flex-shrink-0 transition-colors',
-                    active ? 'text-neutral-950' : 'text-neutral-400 group-hover:text-neutral-600'
-                  )}
-                />
-                <span className="flex-1">{item.label}</span>
-                {active && (
-                  <motion.div
-                    layoutId="activeIndicator"
-                    className="w-1.5 h-1.5 rounded-full bg-neutral-950"
-                  />
-                )}
-              </motion.div>
-            </Link>
-          )
-        })}
+      {/* ── Nav ── */}
+      <nav style={{ flex: 1, overflowY: 'auto', padding: '18px 10px 8px' }}>
+
+        {topNavItems.map((item) => (
+          <NavItem key={item.href} item={item} active={isActive(item.href)} />
+        ))}
+
+        <SectionLabel>RECRUITMENT</SectionLabel>
+        {recruitmentItems.map((item) => (
+          <NavItem key={item.href} item={item} active={isActive(item.href)} />
+        ))}
+
+        <SectionLabel>ORGANISATION</SectionLabel>
+        {organisationItems.map((item) => (
+          <NavItem key={item.href} item={item} active={isActive(item.href)} />
+        ))}
+
       </nav>
 
-      {/* Footer / Workspace */}
-      <div className="px-3 py-3 border-t border-neutral-100">
-        <Link href="/settings">
-          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-white/70 cursor-pointer transition-colors group">
-            <div className="w-6 h-6 rounded-md bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-              {orgLabel}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-neutral-800 text-xs font-medium truncate">
-                {user?.org_id ?? 'My Organisation'}
-              </div>
-              <div className="text-neutral-400 text-[10px] capitalize">{planLabel}</div>
-            </div>
-            <ChevronRight className="w-3.5 h-3.5 text-neutral-300 group-hover:text-neutral-500 transition-colors flex-shrink-0" />
-          </div>
-        </Link>
+      {/* ── Footer ── */}
+      <div style={{ padding: '10px 12px 20px' }}>
+        <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', marginBottom: '16px' }} />
+
+        <button style={{
+          width: '100%',
+          padding: '10px 0',
+          background: 'transparent',
+          border: '1px solid rgba(255,255,255,0.18)',
+          borderRadius: '6px',
+          color: '#ffffff',
+          fontSize: '12.5px',
+          fontWeight: 400,
+          cursor: 'pointer',
+        }}>
+          Need Help?
+        </button>
+
+        <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '16px 0 10px' }} />
+
+        <p style={{
+          textAlign: 'center',
+          color: 'rgba(255,255,255,0.25)',
+          fontSize: '10px',
+          margin: 0,
+        }}>
+          © 2025 AutoHyre, Inc.
+        </p>
       </div>
     </aside>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p style={{
+      color: 'rgba(255,255,255,0.35)',
+      fontSize: '9px',
+      fontWeight: 600,
+      letterSpacing: '0.13em',
+      textTransform: 'uppercase',
+      padding: '22px 10px 8px',
+      margin: 0,
+    }}>
+      {children}
+    </p>
+  )
+}
+
+function NavItem({
+  item,
+  active,
+}: {
+  item: { href: string; label: string; icon: React.ElementType }
+  active: boolean
+}) {
+  const Icon = item.icon
+
+  return (
+    <Link href={item.href} style={{ display: 'block', position: 'relative', textDecoration: 'none' }}>
+      {active && (
+        <span style={{
+          position: 'absolute',
+          left: 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: '3px',
+          height: '18px',
+          borderRadius: '0 3px 3px 0',
+          background: '#84cc16',
+        }} />
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '11px',
+          padding: '9px 10px 9px 16px',
+          borderRadius: '5px',
+          fontSize: '13px',
+          fontWeight: 300,
+          color: '#ffffff',
+          cursor: 'pointer',
+          transition: 'opacity 0.12s',
+          opacity: active ? 1 : 0.88,
+          background: 'transparent',
+        }}
+        onMouseEnter={(e) => {
+          if (!active) (e.currentTarget as HTMLDivElement).style.opacity = '1'
+        }}
+        onMouseLeave={(e) => {
+          if (!active) (e.currentTarget as HTMLDivElement).style.opacity = '0.88'
+        }}
+      >
+        <Icon style={{ width: '15px', height: '15px', flexShrink: 0, color: '#ffffff' }} />
+        <span style={{ color: '#ffffff' }}>{item.label}</span>
+      </div>
+    </Link>
   )
 }

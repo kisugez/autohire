@@ -1,56 +1,340 @@
 'use client'
 
-<<<<<<< Updated upstream
-import { useState } from 'react'
-<<<<<<< HEAD
-import Link from 'next/link'
-=======
-=======
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
->>>>>>> Stashed changes
->>>>>>> c943086 (feat: closes #13 closes #12)
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Search, Bell, ChevronDown, LogOut, User, CreditCard,
-  HelpCircle, CheckCircle, AlertCircle, X, Briefcase, Users,
+  Search, ChevronUp, LogOut, User, CreditCard,
+  HelpCircle, X, Briefcase, Users, Plus, Bell,
 } from 'lucide-react'
 import { getInitials } from '@/lib/utils'
-<<<<<<< HEAD
-import { useAuth } from '@/lib/auth-context'
-=======
-<<<<<<< Updated upstream
-=======
 import { useAuth } from '@/lib/auth-context'
 import { useJobsContext } from '@/lib/jobs-context'
 import { useCandidates } from '@/lib/hooks'
->>>>>>> Stashed changes
->>>>>>> c943086 (feat: closes #13 closes #12)
 
-const notifications = [
-  { id: '1', type: 'success', message: 'Alex Rivera replied to your outreach', time: '5m ago' },
-  { id: '2', type: 'info',    message: 'Interview scheduled with Marcus Johnson', time: '1h ago' },
-  { id: '3', type: 'success', message: 'Automation "High-Match Outreach" triggered 12 times today', time: '2h ago' },
-  { id: '4', type: 'warning', message: 'LinkedIn integration needs reauthorization', time: '3h ago' },
+type NotifType = 'interview' | 'task' | 'job' | 'offer'
+
+interface Notification {
+  id: string
+  type: NotifType
+  actor: string
+  actorInitials: string
+  actorColor: string
+  actorTextColor: string
+  message: string
+  bold: string
+  time: string
+  date: 'today' | 'yesterday'
+  unread?: boolean
+  actionable?: boolean
+}
+
+const notifications: Notification[] = [
+  {
+    id: '1',
+    type: 'interview',
+    actor: 'Aditya Irawan',
+    actorInitials: 'AI',
+    actorColor: '#c8c3f8',
+    actorTextColor: '#26215C',
+    message: 'invited you to interview for the',
+    bold: 'Math Teacher',
+    time: 'just now',
+    date: 'today',
+    unread: true,
+    actionable: true,
+  },
+  {
+    id: '2',
+    type: 'task',
+    actor: 'Amanda Nur',
+    actorInitials: 'AN',
+    actorColor: '#EEEDFE',
+    actorTextColor: '#3C3489',
+    message: 'assigned a new task to',
+    bold: 'Curriculum Alignment 2025',
+    time: '01:00 PM',
+    date: 'today',
+    unread: true,
+  },
+  {
+    id: '3',
+    type: 'job',
+    actor: 'Reminder',
+    actorInitials: 'Y',
+    actorColor: '#c8c3f8',
+    actorTextColor: '#26215C',
+    message: 'your posting',
+    bold: 'Visual Arts Teacher',
+    time: '09:21 AM',
+    date: 'today',
+  },
+  {
+    id: '4',
+    type: 'offer',
+    actor: 'Hendardar',
+    actorInitials: 'H',
+    actorColor: '#F7C1C1',
+    actorTextColor: '#791F1F',
+    message: 'declined the offer for',
+    bold: 'Math Teacher',
+    time: '02:00 PM',
+    date: 'yesterday',
+  },
+  {
+    id: '5',
+    type: 'task',
+    actor: 'Ghozy Muhtarom',
+    actorInitials: 'GM',
+    actorColor: '#B5D4F4',
+    actorTextColor: '#0C447C',
+    message: 'assigned a new task to',
+    bold: 'Collaborative Planning',
+    time: '01:00 PM',
+    date: 'yesterday',
+  },
 ]
 
+const typeMeta: Record<NotifType, { label: string; bg: string; border: string; color: string; iconBg: string; icon: string }> = {
+  interview: {
+    label: 'Interview',
+    bg: '#EEEDFE', border: '#CECBF6', color: '#3C3489',
+    iconBg: '#7c6fe0', icon: 'M2 5h6M5 2v6',
+  },
+  task: {
+    label: 'Task',
+    bg: '#EAF3DE', border: '#C0DD97', color: '#3B6D11',
+    iconBg: '#22a06b', icon: 'M2 5h6M5 2v6',
+  },
+  job: {
+    label: 'Job',
+    bg: '#FAEEDA', border: '#FAC775', color: '#854F0B',
+    iconBg: '#e5a000', icon: 'M5 2v4M5 7.5v.5',
+  },
+  offer: {
+    label: 'Offer',
+    bg: '#FCEBEB', border: '#F7C1C1', color: '#A32D2D',
+    iconBg: '#e03131', icon: 'M3 5l1.5 1.5L7 3.5',
+  },
+}
+
+function TypeBadge({ type }: { type: NotifType }) {
+  const m = typeMeta[type]
+  return (
+    <span style={{
+      fontSize: 11,
+      background: m.bg,
+      border: `0.5px solid ${m.border}`,
+      color: m.color,
+      padding: '1px 7px',
+      borderRadius: 4,
+      fontWeight: 500,
+    }}>
+      {m.label}
+    </span>
+  )
+}
+
+function TypeIconBadge({ type }: { type: NotifType }) {
+  const m = typeMeta[type]
+  const isOffer = type === 'offer'
+  return (
+    <div style={{
+      position: 'absolute', bottom: -1, right: -1,
+      width: 14, height: 14, borderRadius: '50%',
+      background: '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      border: '0.5px solid #e5e7eb',
+    }}>
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+        {isOffer
+          ? <><circle cx="5" cy="5" r="4" fill={m.iconBg} /><path d={m.icon} stroke="#fff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></>
+          : type === 'job'
+          ? <><rect width="10" height="10" rx="2" fill={m.iconBg} /><path d={m.icon} stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></>
+          : <><rect width="10" height="10" rx="2" fill={m.iconBg} /><path d={m.icon} stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></>
+        }
+      </svg>
+    </div>
+  )
+}
+
+function NotifRow({ n }: { n: Notification }) {
+  return (
+    <div style={{
+      padding: '11px 16px',
+      display: 'flex',
+      gap: 11,
+      alignItems: 'flex-start',
+      background: n.unread ? 'rgba(124,111,224,0.04)' : 'transparent',
+      borderLeft: n.unread ? '2.5px solid #7c6fe0' : '2.5px solid transparent',
+      borderBottom: '0.5px solid #f3f4f6',
+      cursor: 'pointer',
+      transition: 'background 0.1s',
+    }}
+      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#fafafa' }}
+      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = n.unread ? 'rgba(124,111,224,0.04)' : 'transparent' }}
+    >
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: '50%',
+          background: n.actorColor,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 600, color: n.actorTextColor,
+        }}>
+          {n.actorInitials}
+        </div>
+        <TypeIconBadge type={n.type} />
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 13, color: '#374151', margin: '0 0 3px', lineHeight: 1.45 }}>
+          <span style={{ fontWeight: 600, color: '#111' }}>{n.actor}</span>{' '}
+          {n.message}{' '}
+          <span style={{ fontWeight: 600, color: '#111' }}>{n.bold}</span>
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+          <TypeBadge type={n.type} />
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>·</span>
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>{n.time}</span>
+        </div>
+        {n.actionable && (
+          <div style={{ display: 'flex', gap: 7, marginTop: 9 }}>
+            <button style={{
+              border: '0.5px solid #d1d5db', background: '#fff',
+              color: '#374151', fontSize: 12, padding: '5px 14px',
+              borderRadius: 5, cursor: 'pointer', fontWeight: 500,
+            }}>Decline</button>
+            <button style={{
+              border: 'none', background: '#7c6fe0',
+              color: '#fff', fontSize: 12, padding: '5px 14px',
+              borderRadius: 5, cursor: 'pointer', fontWeight: 500,
+            }}>Accept</button>
+          </div>
+        )}
+      </div>
+
+      {n.unread && (
+        <div style={{
+          width: 7, height: 7, borderRadius: '50%',
+          background: '#7c6fe0', flexShrink: 0, marginTop: 5,
+        }} />
+      )}
+    </div>
+  )
+}
+
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const [tab, setTab] = useState<'all' | 'unread'>('all')
+  const todayItems     = notifications.filter(n => n.date === 'today')
+  const yesterdayItems = notifications.filter(n => n.date === 'yesterday')
+  const unreadItems    = notifications.filter(n => n.unread)
+  const unreadCount    = unreadItems.length
+
+  const showToday     = tab === 'all' ? todayItems     : unreadItems.filter(n => n.date === 'today')
+  const showYesterday = tab === 'all' ? yesterdayItems : unreadItems.filter(n => n.date === 'yesterday')
+
+  const SectionLabel = ({ label }: { label: string }) => (
+    <div style={{ padding: '10px 16px 2px' }}>
+      <span style={{
+        fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
+        color: '#9ca3af', textTransform: 'uppercase',
+      }}>
+        {label}
+      </span>
+    </div>
+  )
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.97 }}
+      transition={{ duration: 0.12 }}
+      style={{
+        position: 'absolute', right: 0, top: '100%', marginTop: 8,
+        width: 360, background: '#fff',
+        border: '0.5px solid #e5e7eb', borderRadius: 12,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+        overflow: 'hidden', zIndex: 50,
+      }}
+    >
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', padding: '14px 16px 0',
+      }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>Notifications</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{
+            fontSize: 12, color: '#7c6fe0', cursor: 'pointer', fontWeight: 500,
+          }}>Mark all as read</span>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            padding: 0, display: 'flex', color: '#9ca3af',
+          }}>
+            <X style={{ width: 14, height: 14 }} />
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{
+        display: 'flex', padding: '10px 16px 0',
+        borderBottom: '0.5px solid #f3f4f6', marginTop: 10, gap: 0,
+      }}>
+        {(['all', 'unread'] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '0 0 9px', marginRight: 16,
+              fontSize: 13, fontWeight: tab === t ? 600 : 400,
+              color: tab === t ? '#111' : '#9ca3af',
+              borderBottom: tab === t ? '2px solid #7c6fe0' : '2px solid transparent',
+              display: 'flex', alignItems: 'center', gap: 5,
+            }}
+          >
+            {t === 'all' ? 'All' : 'Unread'}
+            {t === 'unread' && unreadCount > 0 && (
+              <span style={{
+                background: '#7c6fe0', color: '#fff',
+                fontSize: 10, fontWeight: 600,
+                padding: '1px 6px', borderRadius: 20,
+              }}>
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Items */}
+      <div style={{ maxHeight: 440, overflowY: 'auto' }}>
+        {showToday.length > 0 && (
+          <>
+            <SectionLabel label="Today" />
+            {showToday.map(n => <NotifRow key={n.id} n={n} />)}
+          </>
+        )}
+        {showYesterday.length > 0 && (
+          <>
+            <SectionLabel label="Yesterday" />
+            {showYesterday.map(n => <NotifRow key={n.id} n={n} />)}
+          </>
+        )}
+        {showToday.length === 0 && showYesterday.length === 0 && (
+          <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13, color: '#9ca3af' }}>
+            No notifications
+          </div>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
 export default function Topbar() {
-<<<<<<< HEAD
-  const { user, logout } = useAuth()
-=======
-<<<<<<< Updated upstream
->>>>>>> c943086 (feat: closes #13 closes #12)
-  const [showNotifications, setShowNotifications] = useState(false)
-  const [showUserMenu, setShowUserMenu] = useState(false)
-  const [searchValue, setSearchValue] = useState('')
-
-<<<<<<< HEAD
-  const displayName = user?.name ?? 'Account'
-  const displayInitials = user ? getInitials(user.name) : '?'
-
-=======
-=======
   const { user, logout } = useAuth()
   const router = useRouter()
   const { jobs } = useJobsContext()
@@ -63,22 +347,21 @@ export default function Topbar() {
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLInputElement>(null)
 
-  const displayName     = user?.name ?? 'Account'
-  const displayInitials = user ? getInitials(user.name) : '?'
+  const displayName     = user?.name ?? 'HR Team'
+  const displayInitials = user ? getInitials(user.name) : 'HR'
+  const unreadCount     = notifications.filter(n => n.unread).length
 
-  // ⌘K focuses the search bar
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
-        inputRef.current?.focus()
+        setTimeout(() => inputRef.current?.focus(), 50)
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
@@ -92,304 +375,244 @@ export default function Topbar() {
   const q = searchValue.trim().toLowerCase()
 
   const matchedJobs = q
-    ? jobs
-        .filter(j =>
-          j.title.toLowerCase().includes(q) ||
-          (j.department ?? '').toLowerCase().includes(q) ||
-          (j.location ?? '').toLowerCase().includes(q)
-        )
-        .slice(0, 4)
+    ? jobs.filter(j =>
+        j.title.toLowerCase().includes(q) ||
+        (j.department ?? '').toLowerCase().includes(q) ||
+        (j.location ?? '').toLowerCase().includes(q)
+      ).slice(0, 4)
     : []
 
   const matchedCandidates = q
-    ? candidates
-        .filter(c =>
-          c.name.toLowerCase().includes(q) ||
-          c.email.toLowerCase().includes(q) ||
-          (c.title ?? '').toLowerCase().includes(q) ||
-          (c.skills ?? []).some((s: string) => s.toLowerCase().includes(q))
-        )
-        .slice(0, 4)
+    ? candidates.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        (c.title ?? '').toLowerCase().includes(q) ||
+        (c.skills ?? []).some((s: string) => s.toLowerCase().includes(q))
+      ).slice(0, 4)
     : []
 
   const hasResults = matchedJobs.length > 0 || matchedCandidates.length > 0
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') {
-      setShowResults(false)
-      inputRef.current?.blur()
-    }
+    if (e.key === 'Escape') { setShowResults(false); setSearchValue('') }
     if (e.key === 'Enter' && q) {
       setShowResults(false)
-      inputRef.current?.blur()
       const dest = matchedCandidates.length >= matchedJobs.length ? 'candidates' : 'jobs'
-      router.push(`/${dest}?q=${encodeURIComponent(q)}`)
+      router.push('/' + dest + '?q=' + encodeURIComponent(q))
       setSearchValue('')
     }
   }
 
-  const handleResultClick = () => {
-    setShowResults(false)
-    setSearchValue('')
-  }
-
->>>>>>> Stashed changes
->>>>>>> c943086 (feat: closes #13 closes #12)
   return (
-    <header className="fixed top-0 left-60 right-0 h-14 bg-white/90 backdrop-blur-xl border-b border-neutral-100 flex items-center px-6 z-30">
+    <header style={{
+      position: 'fixed', top: 0, left: 220, right: 0, height: 67,
+      background: '#f9fafb', borderBottom: '1px solid #e5e7eb',
+      display: 'flex', alignItems: 'center', padding: '0 28px', zIndex: 30, gap: 16,
+    }}>
 
-      {/* Search */}
-      <div className="flex-1 max-w-sm" ref={searchRef}>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Search candidates, jobs…"
-            value={searchValue}
-<<<<<<< Updated upstream
-            onChange={(e) => setSearchValue(e.target.value)}
-<<<<<<< HEAD
-            className="w-full bg-neutral-50 border border-neutral-200 text-neutral-800 text-sm rounded-lg pr-10 py-1.5 placeholder-neutral-400 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all"
-=======
-            className="w-full bg-neutral-50 border border-neutral-200 text-neutral-800 text-sm rounded-lg pl-8.5 pr-10 py-1.5 placeholder-neutral-400 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all"
-=======
-            onChange={(e) => { setSearchValue(e.target.value); setShowResults(true) }}
-            onFocus={() => { if (searchValue) setShowResults(true) }}
-            onKeyDown={handleKeyDown}
-            className="w-full bg-neutral-50 border border-neutral-200 text-neutral-800 text-sm rounded-lg pr-10 py-1.5 placeholder-neutral-400 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all"
->>>>>>> Stashed changes
->>>>>>> c943086 (feat: closes #13 closes #12)
-            style={{ paddingLeft: '2.25rem' }}
-          />
-          {searchValue ? (
-            <button
-              onClick={() => { setSearchValue(''); setShowResults(false) }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-0.5 text-[10px] text-neutral-400 bg-neutral-100 border border-neutral-200 rounded px-1.5 py-0.5 font-mono">
-              ⌘K
-            </kbd>
-          )}
-
-          {/* Live results dropdown */}
-          <AnimatePresence>
-            {showResults && q && (
-              <motion.div
-                initial={{ opacity: 0, y: 6, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.98 }}
-                transition={{ duration: 0.12 }}
-                className="absolute top-full left-0 right-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden z-50"
-              >
-                {!hasResults ? (
-                  <div className="px-4 py-5 text-center text-sm text-neutral-400">
-                    No results for &ldquo;{searchValue}&rdquo;
-                  </div>
-                ) : (
-                  <>
-                    {/* Jobs */}
-                    {matchedJobs.length > 0 && (
-                      <div>
-                        <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
-                          <Briefcase className="w-3 h-3 text-neutral-400" />
-                          <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Jobs</span>
-                        </div>
-                        {matchedJobs.map(job => (
-                          <Link
-                            key={job.id}
-                            href={`/jobs/${job.id}`}
-                            onClick={handleResultClick}
-                            className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50 transition-colors group"
-                          >
-                            <div>
-                              <p className="text-sm text-neutral-800 font-medium group-hover:text-indigo-600 transition-colors">
-                                {job.title}
-                              </p>
-                              <p className="text-xs text-neutral-400">
-                                {[job.department, job.location].filter(Boolean).join(' · ')}
-                              </p>
-                            </div>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium capitalize ${
-                              job.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' :
-                              job.status === 'paused' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                              'bg-neutral-100 text-neutral-500 border-neutral-200'
-                            }`}>
-                              {job.status}
-                            </span>
-                          </Link>
-                        ))}
-                        {matchedJobs.length === 4 && (
-                          <Link
-                            href={`/jobs?q=${encodeURIComponent(q)}`}
-                            onClick={handleResultClick}
-                            className="block px-4 py-2 text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
-                          >
-                            See all job results →
-                          </Link>
-                        )}
-                      </div>
-                    )}
-
-                    {matchedJobs.length > 0 && matchedCandidates.length > 0 && (
-                      <div className="border-t border-neutral-100 mx-4" />
-                    )}
-
-                    {/* Candidates */}
-                    {matchedCandidates.length > 0 && (
-                      <div>
-                        <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
-                          <Users className="w-3 h-3 text-neutral-400" />
-                          <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Candidates</span>
-                        </div>
-                        {matchedCandidates.map(c => (
-                          <Link
-                            key={c.id}
-                            href={`/candidates/${c.id}`}
-                            onClick={handleResultClick}
-                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50 transition-colors group"
-                          >
-                            <div className="w-6 h-6 rounded-md bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-                              {getInitials(c.name)}
-                            </div>
-                            <div>
-                              <p className="text-sm text-neutral-800 font-medium group-hover:text-indigo-600 transition-colors">
-                                {c.name}
-                              </p>
-                              <p className="text-xs text-neutral-400">{c.title ?? c.email}</p>
-                            </div>
-                          </Link>
-                        ))}
-                        {matchedCandidates.length === 4 && (
-                          <Link
-                            href={`/candidates?q=${encodeURIComponent(q)}`}
-                            onClick={handleResultClick}
-                            className="block px-4 py-2 text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
-                          >
-                            See all candidate results →
-                          </Link>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="border-t border-neutral-100 px-4 py-2 flex items-center gap-1.5 text-[11px] text-neutral-400">
-                      <kbd className="bg-neutral-100 border border-neutral-200 rounded px-1.5 py-0.5 font-mono text-[10px]">↵</kbd>
-                      to search all results
-                    </div>
-                  </>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+      {/* Team selector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
+        <div style={{
+          width: 30, height: 30, borderRadius: 8, background: '#1a1a1a',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0,
+        }}>
+          {displayInitials}
         </div>
+        <span style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{displayName}</span>
+        <ChevronUp style={{ width: 14, height: 14, color: '#9ca3af' }} />
       </div>
 
-      <div className="flex items-center gap-1.5 ml-auto">
-        {/* Live status */}
-        <div className="hidden md:flex items-center gap-1.5 text-xs text-neutral-500 bg-green-50 border border-green-200 rounded-full px-3 py-1 mr-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse" />
-          Automations active
+      {/* Divider */}
+      <div style={{ width: 1, height: 28, background: '#e5e7eb' }} />
+
+      {/* Search */}
+      <div style={{ flex: 1, maxWidth: 420, position: 'relative' }} ref={searchRef}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Search style={{ width: 15, height: 15, color: '#9ca3af', flexShrink: 0 }} />
+          <input
+            ref={inputRef}
+            placeholder="Search..."
+            value={searchValue}
+            onChange={e => { setSearchValue(e.target.value); setShowResults(true) }}
+            onFocus={() => { if (searchValue) setShowResults(true) }}
+            onKeyDown={handleKeyDown}
+            style={{
+              border: 'none', outline: 'none', background: 'transparent',
+              fontSize: 13, color: '#374151', width: '100%',
+            }}
+          />
+          {searchValue && (
+            <button onClick={() => { setSearchValue(''); setShowResults(false) }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+              <X style={{ width: 13, height: 13, color: '#9ca3af' }} />
+            </button>
+          )}
         </div>
 
-        {/* Notifications */}
-        <div className="relative">
-          <button
-            onClick={() => { setShowNotifications(!showNotifications); setShowUserMenu(false) }}
-            className="relative w-8 h-8 flex items-center justify-center rounded-lg text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 transition-colors"
-          >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500 border-2 border-white" />
-          </button>
+        <AnimatePresence>
+          {showResults && q && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }} transition={{ duration: 0.12 }}
+              style={{
+                position: 'absolute', top: '100%', left: -30, right: 0, marginTop: 12,
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.08)', overflow: 'hidden', zIndex: 50,
+              }}
+            >
+              {!hasResults ? (
+                <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 13, color: '#9ca3af' }}>
+                  No results for "{searchValue}"
+                </div>
+              ) : (
+                <>
+                  {matchedJobs.length > 0 && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px 6px' }}>
+                        <Briefcase style={{ width: 11, height: 11, color: '#9ca3af' }} />
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Jobs</span>
+                      </div>
+                      {matchedJobs.map(job => (
+                        <Link key={job.id} href={'/jobs/' + job.id}
+                          onClick={() => { setShowResults(false); setSearchValue('') }}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', textDecoration: 'none' }}
+                          onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = '#f9fafb'}
+                          onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'}
+                        >
+                          <div>
+                            <p style={{ fontSize: 13, color: '#111', fontWeight: 500, margin: 0 }}>{job.title}</p>
+                            <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0' }}>{[job.department, job.location].filter(Boolean).join(' · ')}</p>
+                          </div>
+                          <span style={{
+                            fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500,
+                            background: job.status === 'active' ? '#dcfce7' : '#f3f4f6',
+                            color: job.status === 'active' ? '#15803d' : '#6b7280',
+                          }}>{job.status}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                  {matchedJobs.length > 0 && matchedCandidates.length > 0 && (
+                    <div style={{ borderTop: '1px solid #f3f4f6', margin: '0 16px' }} />
+                  )}
+                  {matchedCandidates.length > 0 && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px 6px' }}>
+                        <Users style={{ width: 11, height: 11, color: '#9ca3af' }} />
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Candidates</span>
+                      </div>
+                      {matchedCandidates.map(c => (
+                        <Link key={c.id} href={'/candidates/' + c.id}
+                          onClick={() => { setShowResults(false); setSearchValue('') }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', textDecoration: 'none' }}
+                          onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = '#f9fafb'}
+                          onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'}
+                        >
+                          <div style={{
+                            width: 26, height: 26, borderRadius: 7, background: '#1a1a1a',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0,
+                          }}>
+                            {getInitials(c.name)}
+                          </div>
+                          <div>
+                            <p style={{ fontSize: 13, color: '#111', fontWeight: 500, margin: 0 }}>{c.name}</p>
+                            <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0' }}>{c.title ?? c.email}</p>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ borderTop: '1px solid #f3f4f6', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <kbd style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 4, padding: '1px 6px', fontFamily: 'monospace', fontSize: 10, color: '#6b7280' }}>Enter</kbd>
+                    <span style={{ fontSize: 11, color: '#9ca3af' }}>to search all results</span>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
+      {/* Right icons */}
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+
+        {/* Plus */}
+        <TopbarIconBtn><Plus style={{ width: 15, height: 15 }} /></TopbarIconBtn>
+
+        {/* Notifications */}
+        <div style={{ position: 'relative' }}>
+          <TopbarIconBtn onClick={() => { setShowNotifications(!showNotifications); setShowUserMenu(false) }}>
+            <Bell style={{ width: 15, height: 15 }} />
+            {unreadCount > 0 && (
+              <span style={{
+                position: 'absolute', top: 6, right: 6, width: 6, height: 6,
+                borderRadius: '50%', background: '#ef4444', border: '2px solid #fff',
+              }} />
+            )}
+          </TopbarIconBtn>
           <AnimatePresence>
             {showNotifications && (
-              <motion.div
-                initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                transition={{ duration: 0.12 }}
-                className="absolute right-0 top-full mt-2 w-80 bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden"
-              >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
-                  <span className="text-neutral-900 text-sm font-semibold">Notifications</span>
-                  <button onClick={() => setShowNotifications(false)} className="text-neutral-400 hover:text-neutral-600 transition-colors">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="divide-y divide-neutral-100">
-                  {notifications.map((n) => (
-                    <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-neutral-50 cursor-pointer transition-colors">
-                      {n.type === 'success' ? (
-                        <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                      ) : n.type === 'warning' ? (
-                        <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                      ) : (
-                        <Bell className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-neutral-800 text-xs leading-relaxed">{n.message}</p>
-                        <p className="text-neutral-400 text-xs mt-0.5">{n.time}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
+              <NotificationsPanel onClose={() => setShowNotifications(false)} />
             )}
           </AnimatePresence>
         </div>
 
-        <div className="w-px h-5 bg-neutral-200 mx-1" />
-
-        {/* User Menu */}
-        <div className="relative">
+        {/* User avatar */}
+        <div style={{ position: 'relative' }}>
           <button
             onClick={() => { setShowUserMenu(!showUserMenu); setShowNotifications(false) }}
-            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
+            style={{
+              width: 30, height: 30, borderRadius: '50%', background: '#1a1a1a',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', border: 'none',
+            }}
           >
-            <div className="w-6 h-6 rounded-full bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold">
-              {displayInitials}
-            </div>
-            <div className="hidden sm:block text-left">
-              <div className="text-neutral-800 text-xs font-medium">{displayName}</div>
-            </div>
-            <ChevronDown className="w-3 h-3 text-neutral-400" />
+            {displayInitials}
           </button>
-
           <AnimatePresence>
             {showUserMenu && (
               <motion.div
-                initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                transition={{ duration: 0.12 }}
-                className="absolute right-0 top-full mt-2 w-44 bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden"
+                initial={{ opacity: 0, y: 6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.97 }} transition={{ duration: 0.12 }}
+                style={{
+                  position: 'absolute', right: 0, top: '100%', marginTop: 8,
+                  width: 200, background: '#fff', border: '1px solid #e5e7eb',
+                  borderRadius: 14, boxShadow: '0 8px 24px rgba(0,0,0,0.08)', overflow: 'hidden', zIndex: 50,
+                }}
               >
-                <Link
-                  href="/profile"
-                  onClick={() => setShowUserMenu(false)}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 transition-colors text-sm"
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6' }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: '#111', margin: 0 }}>{displayName}</p>
+                  <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email ?? ''}</p>
+                </div>
+                <Link href="/profile" onClick={() => setShowUserMenu(false)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, color: '#374151', textDecoration: 'none' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = '#f9fafb'}
+                  onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'}
                 >
-                  <User className="w-3.5 h-3.5" />
-                  Profile
+                  <User style={{ width: 13, height: 13 }} /> Profile
                 </Link>
-                <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 transition-colors text-sm">
-                  <CreditCard className="w-3.5 h-3.5" />
-                  Billing
+                <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#f9fafb'}
+                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
+                >
+                  <CreditCard style={{ width: 13, height: 13 }} /> Billing
                 </button>
-                <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 transition-colors text-sm">
-                  <HelpCircle className="w-3.5 h-3.5" />
-                  Help &amp; Support
+                <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#f9fafb'}
+                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
+                >
+                  <HelpCircle style={{ width: 13, height: 13 }} /> Help &amp; Support
                 </button>
-                <div className="border-t border-neutral-100">
+                <div style={{ borderTop: '1px solid #f3f4f6' }}>
                   <button
                     onClick={() => { setShowUserMenu(false); logout() }}
-                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors text-sm"
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#fef2f2'}
+                    onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
                   >
-                    <LogOut className="w-3.5 h-3.5" />
-                    Sign Out
+                    <LogOut style={{ width: 13, height: 13 }} /> Sign Out
                   </button>
                 </div>
               </motion.div>
@@ -399,8 +622,22 @@ export default function Topbar() {
       </div>
 
       {(showNotifications || showUserMenu) && (
-        <div className="fixed inset-0 z-[-1]" onClick={() => { setShowNotifications(false); setShowUserMenu(false) }} />
+        <div style={{ position: 'fixed', inset: 0, zIndex: -1 }}
+          onClick={() => { setShowNotifications(false); setShowUserMenu(false) }} />
       )}
     </header>
+  )
+}
+
+function TopbarIconBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      position: 'relative', width: 30, height: 30, borderRadius: 8,
+      border: '1px solid #e5e7eb', background: '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#374151', cursor: 'pointer',
+    }}>
+      {children}
+    </button>
   )
 }

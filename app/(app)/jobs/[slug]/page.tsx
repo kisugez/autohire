@@ -4,8 +4,9 @@ import { useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import {
-  ArrowLeft, MapPin, Briefcase, DollarSign, Clock,
-  Users, CalendarCheck, Loader2, AlertCircle, ExternalLink, Pencil,
+  ChevronLeft, ChevronRight, Heart, MoreHorizontal, Share2,
+  Briefcase, MapPin, Clock, Users, Loader2, AlertCircle, Pencil,
+  Search, SlidersHorizontal, Plus, X, ChevronDown,
 } from 'lucide-react'
 import StatusBadge from '@/components/cards/status-badge'
 import JobModal from '@/components/jobs/job-modal'
@@ -15,10 +16,48 @@ import { useJobsContext } from '@/lib/jobs-context'
 import type { ApiJob, ApiApplication, JobLinkResponse } from '@/types/job'
 import type { ApiCandidate } from '@/types/candidate'
 
+// Stage tab config — matches your pipeline stages
+const STAGE_TABS = [
+  { key: 'sourced',    label: 'Application' },
+  { key: 'screening',  label: 'Shortlist'   },
+  { key: 'interview',  label: 'Interview'   },
+  { key: 'offer',      label: 'Offer'       },
+  { key: 'hired',      label: 'Hired'       },
+  { key: 'rejected',   label: 'Rejected'    },
+] as const
+
+type StageKey = typeof STAGE_TABS[number]['key']
+
+// Nationality flag helper — simple emoji map
+const FLAG: Record<string, string> = {
+  Japanese: '🇯🇵', Korean: '🇰🇷', American: '🇺🇸', British: '🇬🇧',
+  Indian: '🇮🇳', Pakistani: '🇵🇰', Filipino: '🇵🇭', Egyptian: '🇪🇬',
+  Jordanian: '🇯🇴', Lebanese: '🇱🇧', Saudi: '🇸🇦', Moroccan: '🇲🇦',
+  Emirati: '🇦🇪', Indonesian: '🇮🇩', Malaysian: '🇲🇾', Turkish: '🇹🇷',
+  Spanish: '🇪🇸', French: '🇫🇷', German: '🇩🇪', Italian: '🇮🇹',
+}
+
+function getFlag(nationality?: string) {
+  if (!nationality) return '🏳️'
+  for (const [key, flag] of Object.entries(FLAG)) {
+    if (nationality.toLowerCase().includes(key.toLowerCase())) return flag
+  }
+  return '🏳️'
+}
+
+// Avatar colour from initials
+const AVATAR_COLORS = [
+  'bg-violet-600', 'bg-indigo-500', 'bg-sky-500',
+  'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
+]
+function avatarColor(name: string) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
 export default function JobDetailPage({ params }: { params: { slug: string } }) {
   const { jobs, updateJob } = useJobsContext()
-
-  // Pull job from shared context first, fall back to local fetch
   const contextJob = jobs.find(j => j.id === params.slug) ?? null
 
   const [job, setJob]               = useState<ApiJob | null>(contextJob)
@@ -27,11 +66,10 @@ export default function JobDetailPage({ params }: { params: { slug: string } }) 
   const [loading, setLoading]       = useState(!contextJob)
   const [error, setError]           = useState<string | null>(null)
   const [editOpen, setEditOpen]     = useState(false)
+  const [activeStage, setActiveStage] = useState<StageKey>('sourced')
+  const [search, setSearch]         = useState('')
 
-  // Keep job in sync when context updates (after edit)
-  useEffect(() => {
-    if (contextJob) setJob(contextJob)
-  }, [contextJob])
+  useEffect(() => { if (contextJob) setJob(contextJob) }, [contextJob])
 
   const fetchDetails = useCallback(async () => {
     setLoading(true)
@@ -52,7 +90,6 @@ export default function JobDetailPage({ params }: { params: { slug: string } }) 
   }, [params.slug])
 
   useEffect(() => {
-    // Always fetch apps & candidates; only fetch job if not in context
     if (!contextJob) {
       fetchDetails()
     } else {
@@ -86,226 +123,294 @@ export default function JobDetailPage({ params }: { params: { slug: string } }) 
     )
   }
 
-  const stageOrder = ['sourced', 'screening', 'interview', 'offer', 'hired']
-  const stageCounts = stageOrder.map(s => ({
-    label: s.charAt(0).toUpperCase() + s.slice(1),
-    count: applications.filter(a => a.current_stage === s).length,
-    color: ({ sourced: '#6366F1', screening: '#818CF8', interview: '#A5B4FC', offer: '#22C55E', hired: '#16A34A' } as Record<string, string>)[s] ?? '#6B7280',
-  }))
-  const totalApps = applications.length
+  // Filtered apps for current stage
+  const stageApps = applications.filter(a => {
+    const stageMatch = activeStage === 'sourced'
+      ? (a.current_stage === 'sourced' || !a.current_stage)
+      : a.current_stage === activeStage
+    const searchMatch = !search || (() => {
+      const c = candidates[a.candidate_id]
+      return c?.name?.toLowerCase().includes(search.toLowerCase())
+    })()
+    return stageMatch && searchMatch
+  })
 
-  const topApps = [...applications]
-    .sort((a, b) => (b.ai_score ?? 0) - (a.ai_score ?? 0))
-    .slice(0, 6)
+  // Stage counts
+  const stageCounts: Record<string, number> = {}
+  for (const tab of STAGE_TABS) {
+    stageCounts[tab.key] = applications.filter(a =>
+      tab.key === 'sourced'
+        ? (a.current_stage === 'sourced' || !a.current_stage)
+        : a.current_stage === tab.key
+    ).length
+  }
 
-  // Salary display helper
   const salaryDisplay = job.salary_min && job.salary_max
-    ? `${formatSalary(job.salary_min, job.salary_max)}`
+    ? formatSalary(job.salary_min, job.salary_max)
     : null
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-start gap-4">
+    <div className="flex flex-col min-h-full -mx-6">
+      {/* ── Top bar ── */}
+      <div className="flex items-center justify-between pt-5 pb-0 border-b border-neutral-100">
+        <div className="flex items-start gap-3 px-4 pb-4">
           <Link
             href="/jobs"
-            className="mt-1 w-8 h-8 rounded-lg border border-neutral-200 bg-white flex items-center justify-center text-neutral-500 hover:text-neutral-900 hover:border-neutral-300 transition-colors"
+            className="mt-1 w-7 h-7 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors flex-shrink-0"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ChevronLeft className="w-3.5 h-3.5" />
           </Link>
+
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-neutral-950 text-2xl font-bold tracking-tight">{job.title}</h1>
-              <StatusBadge status={job.status} />
+            <div className="flex items-center gap-2.5 mb-2">
+              <h1 className="text-neutral-950 text-xl font-bold tracking-tight leading-none">
+                {job.title}
+              </h1>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-500 inline-block" />
+                {job.status?.charAt(0).toUpperCase() + (job.status?.slice(1) ?? '')}
+              </span>
             </div>
-            <div className="flex flex-wrap items-center gap-4 text-sm text-neutral-500">
-              {job.department && (
-                <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5" />{job.department}</span>
-              )}
+            <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+              <span>ID: <span className="text-neutral-600 font-medium">#{job.id?.slice(0, 4) ?? '—'}</span></span>
+              <span className="text-neutral-300">·</span>
+              <span className="flex items-center gap-1">
+                <Briefcase className="w-3 h-3" />
+                {job.job_type ?? 'Full Time'}
+              </span>
               {job.location && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5" />{job.location}
-                  {job.remote && <span className="text-indigo-500 ml-1">· Remote OK</span>}
-                </span>
+                <>
+                  <span className="text-neutral-300">·</span>
+                  <span className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {job.location}
+                    {job.remote && <span className="text-violet-500 ml-0.5">· Remote OK</span>}
+                  </span>
+                </>
               )}
-              {salaryDisplay && (
-                <span className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" />{salaryDisplay}</span>
-              )}
-              <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />Posted {formatDate(job.created_at)}</span>
+              <span className="text-neutral-300">·</span>
+              <span>Job Available: <span className="text-neutral-600 font-medium">0/{job.openings ?? 10}</span></span>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Right actions */}
+        <div className="flex items-center gap-2 px-4 pb-4">
+          <button className="w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors">
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <button className="w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors">
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+          <button className="w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-rose-500 transition-colors">
+            <Heart className="w-3.5 h-3.5" />
+          </button>
+          <button className="w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors">
+            <MoreHorizontal className="w-3.5 h-3.5" />
+          </button>
+          <button className="w-8 h-8 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors">
+            <Share2 className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={() => setEditOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-neutral-600 bg-white border border-neutral-200 rounded-lg hover:border-neutral-300 hover:text-neutral-900 transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
           >
-            <Pencil className="w-3.5 h-3.5" />
+            <Pencil className="w-3 h-3" />
             Edit Job
           </button>
-          {job.description && (
-            <button className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-neutral-950 hover:bg-neutral-800 rounded-lg transition-colors">
-              <ExternalLink className="w-3.5 h-3.5" />
-              View Posting
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          { label: 'Total Applications', value: totalApps,              icon: Users,         color: 'text-indigo-600', bg: 'bg-indigo-50' },
-          { label: 'In Interview',        value: stageCounts[2].count,  icon: CalendarCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: 'Offers Extended',     value: stageCounts[3].count,  icon: Briefcase,     color: 'text-green-600',  bg: 'bg-green-50'  },
-          { label: 'Hiring Manager',      value: job.hiring_manager ?? '—', icon: Clock,     color: 'text-amber-600',  bg: 'bg-amber-50'  },
-        ].map(stat => (
-          <div key={stat.label} className="bg-white border border-neutral-200 rounded-xl p-4 flex items-center gap-4">
-            <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0', stat.bg)}>
-              <stat.icon className={cn('w-5 h-5', stat.color)} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-neutral-400 text-xs">{stat.label}</p>
-              <p className="text-neutral-950 text-lg font-bold truncate">{stat.value}</p>
-            </div>
-          </div>
+      {/* ── Content tabs ── */}
+      <div className="flex items-center gap-6 px-4 border-b border-neutral-100">
+        {['Candidates', 'Information', 'Activity'].map(tab => (
+          <button
+            key={tab}
+            className={cn(
+              'text-sm py-2.5 border-b-2 -mb-px transition-colors',
+              tab === 'Candidates'
+                ? 'border-violet-600 text-violet-600 font-semibold'
+                : 'border-transparent text-neutral-400 hover:text-neutral-700'
+            )}
+          >
+            {tab}
+          </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        {/* Applications list */}
-        <div className="col-span-2">
-          <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
-              <h2 className="text-neutral-900 text-sm font-semibold">
-                Applications <span className="text-neutral-400 font-normal ml-1">({totalApps})</span>
-              </h2>
-              <Link href="/candidates" className="text-xs text-indigo-600 hover:text-indigo-700">View all candidates</Link>
-            </div>
-            {topApps.length === 0 ? (
-              <div className="flex items-center justify-center py-12 text-neutral-400 text-sm">No applications yet.</div>
-            ) : (
-              <div className="divide-y divide-neutral-100">
-                {topApps.map(app => {
-                  const c = candidates[app.candidate_id]
-                  if (!c) return null
-                  return (
-                    <div key={app.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-neutral-50 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-neutral-950 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                        {getInitials(c.name)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <Link href={`/candidates/${c.id}`}>
-                          <p className="text-neutral-900 text-sm font-medium hover:text-indigo-600 truncate">{c.name}</p>
-                        </Link>
-                        <p className="text-neutral-400 text-xs truncate">{c.title} · {c.experience}y exp</p>
-                      </div>
-                      {app.ai_score !== null && (
-                        <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-md border flex-shrink-0', getMatchScoreBg(app.ai_score ?? 0))}>
-                          {app.ai_score}%
-                        </span>
-                      )}
-                      <StatusBadge status={app.current_stage} type="stage" />
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+      {/* ── Toolbar ── */}
+      <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-neutral-100">
+        {/* Left: search + layout toggle */}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search..."
+              className="pl-8 pr-3 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-400 w-40"
+            />
           </div>
+          <button className="w-7 h-7 rounded border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700">
+            <svg className="w-3.5 h-3.5" viewBox="0 0 14 14" fill="currentColor">
+              <rect x="0" y="0" width="6" height="6" rx="1"/><rect x="8" y="0" width="6" height="6" rx="1"/>
+              <rect x="0" y="8" width="6" height="6" rx="1"/><rect x="8" y="8" width="6" height="6" rx="1"/>
+            </svg>
+          </button>
+          <button className="w-7 h-7 rounded border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700">
+            <svg className="w-3.5 h-3.5" viewBox="0 0 14 14" fill="currentColor">
+              <rect x="0" y="1" width="14" height="2" rx="1"/><rect x="0" y="6" width="14" height="2" rx="1"/><rect x="0" y="11" width="14" height="2" rx="1"/>
+            </svg>
+          </button>
         </div>
 
-        {/* Right sidebar */}
-        <div className="space-y-4">
-          {/* Funnel */}
-          <div className="bg-white border border-neutral-200 rounded-xl p-5">
-            <h3 className="text-neutral-900 text-sm font-semibold mb-4">Hiring Funnel</h3>
-            <div className="space-y-3.5">
-              {stageCounts.map((stage, i) => (
-                <div key={stage.label}>
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-neutral-600">{stage.label}</span>
-                    <span className="text-neutral-900 font-semibold">{stage.count}</span>
-                  </div>
-                  <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: totalApps > 0 ? `${Math.max((stage.count / totalApps) * 100, stage.count > 0 ? 4 : 0)}%` : '0%' }}
-                      transition={{ delay: 0.15 + i * 0.08, duration: 0.5, ease: 'easeOut' }}
-                      className="h-full rounded-full"
-                      style={{ background: stage.color }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Centre: grey pill switcher — active tab gets white bg + shadow */}
+        <div className="flex items-center bg-neutral-100 rounded-lg p-1 gap-0.5">
+          {STAGE_TABS.map(tab => {
+            const count = stageCounts[tab.key] ?? 0
+            const active = activeStage === tab.key
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveStage(tab.key)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150',
+                  active
+                    ? 'bg-white text-neutral-900 shadow-sm'
+                    : 'text-neutral-500 hover:text-neutral-700'
+                )}
+              >
+                {tab.label}
+                <span className={cn(
+                  'text-[10px] font-semibold min-w-[14px] text-center',
+                  active ? 'text-violet-600' : 'text-neutral-400'
+                )}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
 
-          {/* Job Details */}
-          <div className="bg-white border border-neutral-200 rounded-xl p-5">
-            <h3 className="text-neutral-900 text-sm font-semibold mb-4">Job Details</h3>
-            <div className="space-y-3 text-sm">
-              {[
-                { label: 'Hiring Manager', value: job.hiring_manager ?? '—' },
-                { label: 'Type',           value: job.job_type },
-                { label: 'Remote',         value: job.remote ? 'Yes' : 'No' },
-                { label: 'Min AI Score',   value: `${job.min_ai_score}%` },
-                { label: 'Department',     value: job.department ?? '—' },
-                { label: 'Posted',         value: formatDate(job.created_at) },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between gap-2">
-                  <span className="text-neutral-400">{label}</span>
-                  <span className="text-neutral-800 font-medium capitalize text-right">{value}</span>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => setEditOpen(true)}
-              className="mt-4 w-full flex items-center justify-center gap-2 py-2 text-xs text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
-            >
-              <Pencil className="w-3 h-3" /> Edit Details
-            </button>
-          </div>
-
-          {/* Requirements */}
-          {job.requirements && (job.requirements.skills?.length ?? 0) > 0 && (
-            <div className="bg-white border border-neutral-200 rounded-xl p-5">
-              <h3 className="text-neutral-900 text-sm font-semibold mb-3">Required Skills</h3>
-              <div className="flex flex-wrap gap-1.5">
-                {job.requirements.skills.map(skill => (
-                  <span key={skill} className="px-2.5 py-1 rounded-lg text-xs bg-neutral-100 text-neutral-600 border border-neutral-200">
-                    {skill}
-                  </span>
-                ))}
-              </div>
-              {job.requirements.min_experience && (
-                <p className="text-neutral-400 text-xs mt-3">
-                  Min. {job.requirements.min_experience} years experience
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Pipeline stages */}
-          {(job.pipeline_stages?.length ?? 0) > 0 && (
-            <div className="bg-white border border-neutral-200 rounded-xl p-5">
-              <h3 className="text-neutral-900 text-sm font-semibold mb-3">Pipeline Stages</h3>
-              <div className="space-y-1.5">
-                {(job.pipeline_stages ?? []).map((stage, i) => (
-                  <div key={stage} className="flex items-center gap-2 text-sm text-neutral-600">
-                    <span className="w-4 h-4 rounded-full bg-neutral-100 border border-neutral-200 text-[10px] font-bold text-neutral-400 flex items-center justify-center flex-shrink-0">
-                      {i + 1}
-                    </span>
-                    {stage}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+        {/* Right: filter + add */}
+        <div className="flex items-center gap-2">
+          <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
+            <SlidersHorizontal className="w-3 h-3" />
+            Filter
+          </button>
+          <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-colors">
+            <Plus className="w-3 h-3" />
+            Add Candidate
+          </button>
         </div>
       </div>
 
-      {/* Edit modal — uses shared context so Dashboard + Jobs list update instantly */}
+      <div className="flex-1 overflow-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-neutral-100">
+              {['Name', 'Applied Date', 'Source', 'Years Experience', 'Rating', 'Current Location'].map(col => (
+                <th key={col} className="text-left px-4 py-3 text-xs font-medium text-neutral-400">
+                  <span className="flex items-center gap-1">
+                    {col}
+                    <ChevronDown className="w-3 h-3 opacity-50" />
+                  </span>
+                </th>
+              ))}
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {stageApps.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="text-center py-16 text-neutral-400 text-sm">
+                  No candidates in this stage yet.
+                </td>
+              </tr>
+            ) : (
+              stageApps.map((app, i) => {
+                const c = candidates[app.candidate_id]
+                if (!c) return null
+                const color = avatarColor(c.name)
+                return (
+                  <motion.tr
+                    key={app.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                    className="border-b border-neutral-50 hover:bg-neutral-50/70 transition-colors group"
+                  >
+                    {/* Name */}
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-2.5">
+                        {c.avatar_url ? (
+                          <img src={c.avatar_url} alt={c.name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                        ) : (
+                          <div className={cn('w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0', color)}>
+                            {getInitials(c.name)}
+                          </div>
+                        )}
+                        <Link href={`/candidates/${c.id}`} className="text-neutral-800 font-medium hover:text-violet-600 transition-colors text-sm">
+                          {c.name}
+                        </Link>
+                        {c.gender === 'male'   && <span className="text-blue-400 text-xs">♂</span>}
+                        {c.gender === 'female' && <span className="text-pink-400 text-xs">♀</span>}
+                      </div>
+                    </td>
+                    {/* Applied Date */}
+                    <td className="px-4 py-3.5 text-neutral-500 text-xs">{formatDate(app.created_at)}</td>
+                    {/* Source */}
+                    <td className="px-4 py-3.5 text-neutral-500 text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <svg className="w-3 h-3 text-neutral-400 flex-shrink-0" fill="none" viewBox="0 0 14 14" stroke="currentColor">
+                          <rect x="1" y="2" width="12" height="10" rx="1.5" strokeWidth="1.2"/>
+                          <path d="M1 5h12" strokeWidth="1.2"/>
+                        </svg>
+                        {app.source ?? 'Career Page'}
+                      </span>
+                    </td>
+                    {/* Experience */}
+                    <td className="px-4 py-3.5 text-neutral-500 text-xs">
+                      {c.experience ? `${c.experience} Years` : '—'}
+                    </td>
+                    {/* Rating */}
+                    <td className="px-4 py-3.5 text-neutral-500 text-xs">
+                      {app.ai_score != null ? (
+                        <span className={cn('inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border', getMatchScoreBg(app.ai_score))}>
+                          {app.ai_score}%
+                        </span>
+                      ) : '—'}
+                    </td>
+                    {/* Location */}
+                    <td className="px-4 py-3.5 text-neutral-500 text-xs">
+                      <span className="flex items-center gap-1.5">
+                        {c.location_flag && <span className="text-base leading-none">{c.location_flag}</span>}
+                        <span className="max-w-[120px] truncate">{c.location ?? '—'}</span>
+                      </span>
+                    </td>
+                    {/* Actions */}
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button className="w-6 h-6 rounded border border-red-200 text-red-400 flex items-center justify-center hover:bg-red-50 transition-colors">
+                          <X className="w-3 h-3" />
+                        </button>
+                        <button className="px-3 py-1 rounded-lg border border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-100 transition-colors font-medium">
+                          Shortlist
+                        </button>
+                        <button className="w-6 h-6 rounded text-neutral-400 flex items-center justify-center hover:bg-neutral-100 transition-colors">
+                          <MoreHorizontal className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Edit modal */}
       <JobModal
         open={editOpen}
         onClose={() => setEditOpen(false)}

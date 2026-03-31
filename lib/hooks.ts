@@ -107,10 +107,13 @@ export function useApplicationsByJob(jobId: string) {
 // Combined hook: all applications across all jobs (fetches jobs first then their apps)
 export function useAllApplications(jobs: ApiJob[]) {
   const [applications, setApplications] = useState<ApiApplication[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!jobs.length) return
+    if (!jobs.length) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     Promise.all(
       jobs.map((j) =>

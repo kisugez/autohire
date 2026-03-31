@@ -7,23 +7,89 @@ import {
   type DragStartEvent, type DragEndEvent, type DragOverEvent,
 } from '@dnd-kit/core'
 import Link from 'next/link'
-import { MapPin, Loader2, AlertCircle, Filter, RefreshCw } from 'lucide-react'
+import {
+  MapPin, Loader2, AlertCircle, Filter, RefreshCw,
+  Briefcase, Zap, MoreHorizontal, X, ChevronRight,
+} from 'lucide-react'
 import { useJobsContext } from '@/lib/jobs-context'
 import { get, patch } from '@/lib/api'
 import { getInitials, getMatchScoreBg, cn } from '@/lib/utils'
 import type { ApiCandidate, CandidateStage } from '@/types/candidate'
 import type { ApiApplication } from '@/types/job'
 
-const STAGES: { id: CandidateStage; label: string; dot: string }[] = [
-  { id: 'sourced',   label: 'Sourced',   dot: 'bg-neutral-400' },
-  { id: 'screening', label: 'Screening', dot: 'bg-blue-500'    },
-  { id: 'interview', label: 'Interview', dot: 'bg-indigo-500'  },
-  { id: 'offer',     label: 'Offer',     dot: 'bg-amber-500'   },
-  { id: 'hired',     label: 'Hired',     dot: 'bg-green-500'   },
-  { id: 'rejected',  label: 'Rejected',  dot: 'bg-red-400'     },
+const STAGES: {
+  id: CandidateStage
+  label: string
+  headerBg: string
+  headerBorder: string
+  headerText: string
+  badgeBg: string
+  colBg: string
+}[] = [
+  {
+    id: 'sourced',
+    label: 'Sourced',
+    headerBg: 'bg-slate-50',
+    headerBorder: 'border-l-slate-400',
+    headerText: 'text-slate-700',
+    badgeBg: 'bg-slate-100 text-slate-500 border-slate-200',
+    colBg: 'bg-slate-50/60',
+  },
+  {
+    id: 'screening',
+    label: 'Screening',
+    headerBg: 'bg-blue-50',
+    headerBorder: 'border-l-blue-400',
+    headerText: 'text-blue-800',
+    badgeBg: 'bg-blue-100 text-blue-600 border-blue-200',
+    colBg: 'bg-blue-50/40',
+  },
+  {
+    id: 'interview',
+    label: 'Interview',
+    headerBg: 'bg-violet-50',
+    headerBorder: 'border-l-violet-400',
+    headerText: 'text-violet-800',
+    badgeBg: 'bg-violet-100 text-violet-600 border-violet-200',
+    colBg: 'bg-violet-50/40',
+  },
+  {
+    id: 'offer',
+    label: 'Offer',
+    headerBg: 'bg-amber-50',
+    headerBorder: 'border-l-amber-400',
+    headerText: 'text-amber-800',
+    badgeBg: 'bg-amber-100 text-amber-600 border-amber-200',
+    colBg: 'bg-amber-50/40',
+  },
+  {
+    id: 'hired',
+    label: 'Hired',
+    headerBg: 'bg-emerald-50',
+    headerBorder: 'border-l-emerald-400',
+    headerText: 'text-emerald-800',
+    badgeBg: 'bg-emerald-100 text-emerald-600 border-emerald-200',
+    colBg: 'bg-emerald-50/40',
+  },
+  {
+    id: 'rejected',
+    label: 'Rejected',
+    headerBg: 'bg-red-50',
+    headerBorder: 'border-l-red-400',
+    headerText: 'text-red-800',
+    badgeBg: 'bg-red-100 text-red-500 border-red-200',
+    colBg: 'bg-red-50/30',
+  },
 ]
 
 const STAGE_IDS = new Set(STAGES.map(s => s.id as string))
+
+const NEXT_STAGE: Partial<Record<CandidateStage, string>> = {
+  sourced:   'Move to Screening',
+  screening: 'Move to Interview',
+  interview: 'Send Offer',
+  offer:     'Mark Hired',
+}
 
 interface PipelineCard {
   applicationId: string
@@ -39,20 +105,16 @@ interface PipelineCard {
 }
 
 // ── Droppable column ──────────────────────────────────────────────
-function DroppableColumn({
-  stageId, isOver, children,
-}: {
-  stageId: string
-  isOver: boolean
-  children: React.ReactNode
+function DroppableColumn({ stageId, isOver, colBg, children }: {
+  stageId: string; isOver: boolean; colBg: string; children: React.ReactNode
 }) {
   const { setNodeRef } = useDroppable({ id: stageId })
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        'rounded-xl p-2.5 min-h-[200px] flex flex-col gap-2 transition-colors duration-150 border',
-        isOver ? 'border-indigo-300 bg-indigo-50/50' : 'border-neutral-200 bg-neutral-50',
+        'rounded-lg p-1.5 min-h-[160px] flex flex-col gap-2 transition-colors duration-150 border',
+        isOver ? 'border-indigo-300 bg-indigo-50/60' : `border-neutral-200/70 ${colBg}`,
       )}
     >
       {children}
@@ -60,7 +122,19 @@ function DroppableColumn({
   )
 }
 
-// ── Draggable card (plain useDraggable — no sortable version conflict) ──
+// ── Info row ──────────────────────────────────────────────────────
+function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
+  if (!value) return null
+  return (
+    <div className="flex items-center gap-1.5 text-[11px]">
+      <Icon className="w-3 h-3 text-neutral-400 flex-shrink-0" />
+      <span className="text-neutral-400 w-14 flex-shrink-0 leading-none">{label}</span>
+      <span className="text-neutral-700 font-medium truncate leading-none">{value}</span>
+    </div>
+  )
+}
+
+// ── Draggable card ────────────────────────────────────────────────
 function DraggableCard({ card }: { card: PipelineCard }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: card.applicationId })
@@ -69,6 +143,8 @@ function DraggableCard({ card }: { card: PipelineCard }) {
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined
 
+  const nextLabel = NEXT_STAGE[card.stage]
+
   return (
     <div
       ref={setNodeRef}
@@ -76,46 +152,76 @@ function DraggableCard({ card }: { card: PipelineCard }) {
       {...attributes}
       {...listeners}
       className={cn(
-        'bg-white border border-neutral-200 rounded-xl p-3.5 cursor-grab active:cursor-grabbing',
-        'hover:border-neutral-300 hover:shadow-sm transition-colors duration-150',
+        'bg-white border border-neutral-200 rounded-lg overflow-hidden',
+        'hover:border-neutral-300 hover:shadow-sm transition-all duration-150 cursor-grab active:cursor-grabbing',
         isDragging && 'opacity-40 z-50 relative',
       )}
     >
-      <div className="flex items-start gap-2.5 mb-2.5">
-        <div className="w-7 h-7 rounded-lg bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+      {/* Header */}
+      <div className="flex items-start gap-2 p-2.5 pb-2">
+        <div className="w-7 h-7 rounded-full bg-neutral-900 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ring-2 ring-white">
           {getInitials(card.name)}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 pt-px">
           <Link
             href={`/candidates/${card.candidateId}`}
             onClick={e => e.stopPropagation()}
             className="block"
           >
-            <h3 className="text-neutral-900 text-xs font-semibold truncate hover:text-indigo-600 transition-colors">
+            <h3 className="text-neutral-900 text-[11px] font-semibold leading-tight hover:text-indigo-600 transition-colors truncate">
               {card.name}
             </h3>
           </Link>
-          <p className="text-neutral-400 text-xs truncate">{card.title}</p>
+          <p className="text-neutral-400 text-[10px] truncate mt-0.5">{card.title || '—'}</p>
         </div>
-        {card.aiScore !== null && (
-          <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded border flex-shrink-0', getMatchScoreBg(card.aiScore))}>
-            {card.aiScore}%
-          </span>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {card.aiScore !== null && (
+            <span className={cn('text-[10px] font-bold px-1 py-0.5 rounded border', getMatchScoreBg(card.aiScore))}>
+              {card.aiScore}%
+            </span>
+          )}
+          <button
+            onClick={e => e.stopPropagation()}
+            className="p-0.5 rounded hover:bg-neutral-100 text-neutral-400 hover:text-neutral-600 transition-colors"
+          >
+            <MoreHorizontal className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="h-px bg-neutral-100 mx-2.5" />
+
+      {/* Info rows */}
+      <div className="px-2.5 py-2 space-y-1.5">
+        {card.jobTitle && <InfoRow icon={Briefcase} label="Role"     value={card.jobTitle} />}
+        <InfoRow                   icon={MapPin}     label="Location" value={card.location} />
+        {card.skills.length > 0 && (
+          <InfoRow icon={Zap} label="Skills" value={card.skills.slice(0, 2).join(', ')} />
         )}
       </div>
-      <div className="flex items-center gap-1.5 text-xs text-neutral-400 mb-2">
-        <MapPin className="w-3 h-3 flex-shrink-0" />
-        <span className="truncate">{card.location}</span>
-      </div>
-      {card.jobTitle && (
-        <p className="text-[10px] text-indigo-500 font-medium truncate mb-1">{card.jobTitle}</p>
-      )}
-      <div className="flex flex-wrap gap-1">
-        {card.skills.slice(0, 2).map(skill => (
-          <span key={skill} className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-100 text-neutral-500 border border-neutral-200">
-            {skill}
-          </span>
-        ))}
+
+      {/* Footer */}
+      <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
+        <button
+          onClick={e => { e.stopPropagation(); e.preventDefault() }}
+          className="flex items-center justify-center w-6 h-6 rounded-md border border-neutral-200 text-neutral-400 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+        >
+          <X className="w-3 h-3" />
+        </button>
+        {nextLabel ? (
+          <button
+            onClick={e => { e.stopPropagation(); e.preventDefault() }}
+            className="flex-1 flex items-center justify-center gap-1 h-6 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-[10px] font-medium border border-neutral-200 transition-colors"
+          >
+            {nextLabel}
+            <ChevronRight className="w-2.5 h-2.5" />
+          </button>
+        ) : (
+          <div className="flex-1 h-6 rounded-md bg-neutral-50 border border-neutral-200 flex items-center justify-center text-[10px] text-neutral-400">
+            Final stage
+          </div>
+        )}
       </div>
     </div>
   )
@@ -131,16 +237,13 @@ export default function PipelinePage() {
   const [activeCard, setActiveCard]   = useState<PipelineCard | null>(null)
   const [overStageId, setOverStageId] = useState<string | null>(null)
 
-  // ── fetch ─────────────────────────────────────────────────────
   const fetchPipeline = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
       const [allCandidates, allJobs] = await Promise.all([
         get<ApiCandidate[]>('/api/v1/candidates'),
         get<{ items: import('@/types/job').ApiJob[] }>('/api/v1/jobs?page=1&page_size=100'),
       ])
-
       const appResults = await Promise.all(
         allJobs.items.map(j =>
           get<ApiApplication[]>(`/api/v1/applications/job/${j.id}`)
@@ -150,10 +253,8 @@ export default function PipelinePage() {
       )
       const allApps      = appResults.flat()
       const candidateMap = Object.fromEntries(allCandidates.map(c => [c.id, c]))
-
       const grouped: Record<string, PipelineCard[]> = {}
       STAGES.forEach(s => { grouped[s.id] = [] })
-
       for (const app of allApps) {
         const c = candidateMap[app.candidate_id]
         if (!c) continue
@@ -173,40 +274,26 @@ export default function PipelinePage() {
         })
       }
       setCards(grouped)
-    } catch {
-      setError('Failed to load pipeline.')
-    } finally {
-      setLoading(false)
-    }
+    } catch { setError('Failed to load pipeline.') }
+    finally   { setLoading(false) }
   }, [])
 
   useEffect(() => { fetchPipeline() }, [fetchPipeline])
 
-  // ── helpers ───────────────────────────────────────────────────
-  const findCardStage = useCallback(
-    (appId: string): CandidateStage | null => {
-      for (const s of STAGES) {
-        if ((cards[s.id] ?? []).some(c => c.applicationId === appId)) return s.id
-      }
-      return null
-    },
-    [cards],
-  )
+  const findCardStage = useCallback((appId: string): CandidateStage | null => {
+    for (const s of STAGES) {
+      if ((cards[s.id] ?? []).some(c => c.applicationId === appId)) return s.id
+    }
+    return null
+  }, [cards])
 
-  const resolveToStage = useCallback(
-    (overId: string): CandidateStage | null => {
-      if (STAGE_IDS.has(overId)) return overId as CandidateStage
-      return findCardStage(overId)
-    },
-    [findCardStage],
-  )
+  const resolveToStage = useCallback((overId: string): CandidateStage | null => {
+    if (STAGE_IDS.has(overId)) return overId as CandidateStage
+    return findCardStage(overId)
+  }, [findCardStage])
 
-  // ── sensors ───────────────────────────────────────────────────
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  )
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  // ── drag handlers ─────────────────────────────────────────────
   const handleDragStart = useCallback(({ active }: DragStartEvent) => {
     const stage = findCardStage(active.id as string)
     if (!stage) return
@@ -218,15 +305,11 @@ export default function PipelinePage() {
   }, [resolveToStage])
 
   const handleDragEnd = useCallback(async ({ active, over }: DragEndEvent) => {
-    setActiveCard(null)
-    setOverStageId(null)
+    setActiveCard(null); setOverStageId(null)
     if (!over) return
-
     const fromStage = findCardStage(active.id as string)
     const toStage   = resolveToStage(over.id as string)
     if (!fromStage || !toStage || fromStage === toStage) return
-
-    // 1. Optimistic update — move card immediately in local state
     setCards(prev => {
       const from = [...(prev[fromStage] ?? [])]
       const to   = [...(prev[toStage]   ?? [])]
@@ -236,71 +319,61 @@ export default function PipelinePage() {
       to.unshift({ ...moved, stage: toStage })
       return { ...prev, [fromStage]: from, [toStage]: to }
     })
-
-    // 2. Persist to backend via the new PATCH endpoint
     try {
       await patch(`/api/v1/applications/${active.id}`, { current_stage: toStage })
     } catch {
-      // Only rollback if the API actually fails
       await fetchPipeline()
     }
   }, [findCardStage, resolveToStage, fetchPipeline])
 
-  // ── filtered view ─────────────────────────────────────────────
   const displayCards = jobFilter
-    ? Object.fromEntries(
-        Object.entries(cards).map(([stage, list]) => [
-          stage, list.filter(c => c.jobId === jobFilter),
-        ]),
-      )
+    ? Object.fromEntries(Object.entries(cards).map(([s, l]) => [s, l.filter(c => c.jobId === jobFilter)]))
     : cards
 
   const totalCount = Object.values(displayCards).reduce((s, l) => s + l.length, 0)
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 pt-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-neutral-950 text-xl font-semibold">Pipeline</h1>
-          <p className="text-neutral-400 text-sm mt-0.5">
+          <h1 className="text-neutral-950 text-lg font-semibold">Pipeline</h1>
+          <p className="text-neutral-400 text-xs mt-0.5">
             {loading ? 'Loading…' : `${totalCount} candidate${totalCount !== 1 ? 's' : ''} across all stages`}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 border border-neutral-200 rounded-lg px-3 py-1.5 bg-white">
-            <Filter className="w-3.5 h-3.5 text-neutral-400" />
+          <div className="flex items-center gap-1.5 border border-neutral-200 rounded-md px-2.5 py-1.5 bg-white">
+            <Filter className="w-3 h-3 text-neutral-400" />
             <select
               value={jobFilter}
               onChange={e => setJobFilter(e.target.value)}
-              className="bg-transparent text-sm text-neutral-700 outline-none cursor-pointer"
+              className="bg-transparent text-xs text-neutral-700 outline-none cursor-pointer"
             >
               <option value="">All Jobs</option>
-              {jobs.map(j => (
-                <option key={j.id} value={j.id}>{j.title}</option>
-              ))}
+              {jobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
             </select>
           </div>
           <button
             onClick={fetchPipeline}
-            className="flex items-center gap-2 bg-neutral-950 hover:bg-neutral-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-medium px-3 py-1.5 rounded-md transition-colors"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="w-3 h-3" />
             Refresh
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2.5 rounded-lg">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {error}
           <button onClick={fetchPipeline} className="ml-auto text-xs underline">Retry</button>
         </div>
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 py-24 text-neutral-400 text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading pipeline…
+        <div className="flex items-center justify-center gap-2 py-20 text-neutral-400 text-xs">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading pipeline…
         </div>
       ) : (
         <DndContext
@@ -310,32 +383,36 @@ export default function PipelinePage() {
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex gap-3 overflow-x-auto pb-4">
+          <div className="flex gap-3 overflow-x-auto pb-5">
             {STAGES.map(stage => {
               const stageCandidates = displayCards[stage.id] ?? []
               const isOver = overStageId === stage.id && activeCard?.stage !== stage.id
 
               return (
-                <div key={stage.id} className="flex-shrink-0 w-64">
-                  {/* Column header */}
-                  <div className="flex items-center gap-2 mb-2.5 px-1">
-                    <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', stage.dot)} />
-                    <span className="text-neutral-700 text-sm font-medium">{stage.label}</span>
-                    <span className="text-xs bg-neutral-100 text-neutral-500 border border-neutral-200 rounded-full px-2 py-0.5">
+                <div key={stage.id} className="flex-shrink-0 w-[220px]">
+                  {/* Column header — left border accent, rounded-md (less rounded) */}
+                  <div className={cn(
+                    'flex items-center gap-2 mb-2 px-2.5 py-2 rounded-md border border-l-4 border-neutral-200/60',
+                    stage.headerBg,
+                    stage.headerBorder,
+                  )}>
+                    <span className={cn('text-xs font-semibold flex-1', stage.headerText)}>
+                      {stage.label}
+                    </span>
+                    <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full border', stage.badgeBg)}>
                       {stageCandidates.length}
                     </span>
                   </div>
 
-                  {/* Droppable zone */}
-                  <DroppableColumn stageId={stage.id} isOver={isOver}>
+                  <DroppableColumn stageId={stage.id} isOver={isOver} colBg={stage.colBg}>
                     {stageCandidates.length === 0 ? (
                       <div className={cn(
-                        'flex items-center justify-center h-24 rounded-lg border border-dashed text-xs transition-colors',
+                        'flex items-center justify-center h-16 rounded-md border border-dashed text-[10px] transition-colors',
                         isOver
                           ? 'border-indigo-300 text-indigo-400 bg-indigo-50'
                           : 'border-neutral-300 text-neutral-400',
                       )}>
-                        {isOver ? 'Release to move here' : 'Drop here'}
+                        {isOver ? 'Release to move' : 'Drop here'}
                       </div>
                     ) : (
                       stageCandidates.map(card => (
@@ -348,26 +425,25 @@ export default function PipelinePage() {
             })}
           </div>
 
-          {/* Ghost card that follows the cursor */}
           <DragOverlay dropAnimation={null}>
             {activeCard && (
-              <div className="bg-white border-2 border-indigo-400 rounded-xl p-3.5 shadow-2xl w-64 rotate-1 opacity-95 pointer-events-none">
-                <div className="flex items-start gap-2.5 mb-2">
-                  <div className="w-7 h-7 rounded-lg bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+              <div className="bg-white border-2 border-indigo-400 rounded-lg p-2.5 shadow-2xl w-[220px] rotate-1 opacity-95 pointer-events-none">
+                <div className="flex items-start gap-2">
+                  <div className="w-7 h-7 rounded-full bg-neutral-900 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
                     {getInitials(activeCard.name)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-neutral-900 text-xs font-semibold truncate">{activeCard.name}</p>
-                    <p className="text-neutral-400 text-xs truncate">{activeCard.title}</p>
+                    <p className="text-neutral-900 text-[11px] font-semibold truncate">{activeCard.name}</p>
+                    <p className="text-neutral-400 text-[10px] truncate">{activeCard.title}</p>
                   </div>
                   {activeCard.aiScore !== null && (
-                    <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded border flex-shrink-0', getMatchScoreBg(activeCard.aiScore))}>
+                    <span className={cn('text-[10px] font-bold px-1 py-0.5 rounded border flex-shrink-0', getMatchScoreBg(activeCard.aiScore))}>
                       {activeCard.aiScore}%
                     </span>
                   )}
                 </div>
                 {activeCard.jobTitle && (
-                  <p className="text-[10px] text-indigo-500 font-medium truncate">{activeCard.jobTitle}</p>
+                  <p className="text-[10px] text-indigo-500 font-medium truncate mt-1.5">{activeCard.jobTitle}</p>
                 )}
               </div>
             )}

@@ -92,7 +92,7 @@ module.exports = {
         xl:  "0 16px 48px rgba(0,0,0,0.10), 0 8px 16px rgba(0,0,0,0.06)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["NeueHaas", "system-ui", "sans-serif"],
       },
       keyframes: {
         "accordion-down": { from: { height: "0" }, to: { height: "var(--radix-accordion-content-height)" } },
