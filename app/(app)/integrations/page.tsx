@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -404,7 +404,7 @@ function ConnectModal({
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function IntegrationsPage() {
+function IntegrationsContent() {
   const searchParams = useSearchParams()
 
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false })
@@ -744,5 +744,13 @@ export default function IntegrationsPage() {
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+export default function IntegrationsPage() {
+  return (
+    <Suspense>
+      <IntegrationsContent />
+    </Suspense>
   )
 }
