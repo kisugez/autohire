@@ -10,7 +10,7 @@ import {
   Search, SlidersHorizontal, Plus, X, ChevronDown, Check,
 } from 'lucide-react'
 import JobModal from '@/components/jobs/job-modal'
-import { formatDate, formatSalary, getInitials, getMatchScoreBg, cn, getAvatarUrl } from '@/lib/utils'
+import { formatDate, getInitials, getMatchScoreBg, cn, getAvatarUrl } from '@/lib/utils'
 import { get, post } from '@/lib/api'
 import { useJobsContext } from '@/lib/jobs-context'
 import type { ApiJob, ApiApplication, JobLinkResponse } from '@/types/job'
@@ -235,7 +235,7 @@ export default function JobDetailPage({ params }: { params: { slug: string } }) 
                 </>
               )}
               <span className="text-neutral-300">·</span>
-              <span>Job Available: <span className="text-neutral-600 font-medium">0/{job?.open_positions ?? job?.positions ?? 10}</span></span>
+              <span>Job Available: <span className="text-neutral-600 font-medium"></span></span>
             </div>
           </div>
         </div>
