@@ -87,7 +87,7 @@ export default function JobDetailPage({ params }: { params: { slug: string } }) 
     } catch { /* recover per-candidate below */ }
 
     // IDs that still aren't in the map after the bulk fetch
-    const missing = [...new Set(apps.map(a => a.candidate_id))].filter(id => id && !map[id])
+    const missing = Array.from(new Set(apps.map(a => a.candidate_id))).filter(id => id && !map[id])
     if (missing.length > 0) {
       const settled = await Promise.allSettled(
         missing.map(id => get<ApiCandidate>(`/api/v1/candidates/${id}`))
