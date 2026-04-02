@@ -56,3 +56,21 @@ export function formatSalary(min?: number | null, max?: number | null): string {
   if (!min) return `Up to ${fmt(max)}`
   return `${fmt(min)} – ${fmt(max)}`
 }
+
+/**
+ * Returns an avatar image URL for a candidate.
+ * - If avatar_url is set and non-empty → use it directly
+ * - Else if github_url is set → derive https://github.com/<username>.png
+ * - Otherwise → null (caller should render initials fallback)
+ */
+export function getAvatarUrl(
+  avatarUrl: string | null | undefined,
+  githubUrl: string | null | undefined,
+): string | null {
+  if (avatarUrl) return avatarUrl
+  if (githubUrl) {
+    const match = githubUrl.match(/github\.com\/([^/?\s]+)/)
+    if (match?.[1]) return `https://github.com/${match[1]}.png`
+  }
+  return null
+}

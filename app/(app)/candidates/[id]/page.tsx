@@ -14,7 +14,7 @@ import {
 import StatusBadge from '@/components/cards/status-badge'
 import ScheduleInterviewModal from '@/components/candidates/schedule-interview-modal'
 import ComposeEmailModal from '@/components/candidates/compose-email-modal'
-import { getInitials, getMatchScoreBg, formatDate, formatRelativeTime, cn } from '@/lib/utils'
+import { getInitials, getMatchScoreBg, formatDate, formatRelativeTime, cn, getAvatarUrl } from '@/lib/utils'
 import { get, patch, post } from '@/lib/api'
 import type { ApiCandidate } from '@/types/candidate'
 import type { ApiApplication } from '@/types/job'
@@ -330,9 +330,16 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           </Link>
 
           {/* avatar */}
-          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-            {getInitials(candidate.name)}
-          </div>
+          {(() => {
+            const avatarSrc = getAvatarUrl(candidate.avatar_url, candidate.github_url)
+            return avatarSrc ? (
+              <img src={avatarSrc} alt={candidate.name} className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
+            ) : (
+              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                {getInitials(candidate.name)}
+              </div>
+            )
+          })()}
 
           <div>
             <div className="flex items-center gap-2">
@@ -399,7 +406,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       <div className="flex flex-1 overflow-hidden">
 
         {/* ══ LEFT SIDEBAR ══════════════════════════════════════ */}
-        <div className="w-72 flex-shrink-0 border-r border-neutral-100 bg-white overflow-y-auto">
+        <div className="w-96 flex-shrink-0 border-r border-neutral-100 bg-white overflow-y-auto">
           <div className="p-5 space-y-6">
 
             {/* Personal Information */}
@@ -652,9 +659,16 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                                   {/* icon + connector line */}
                                   <div className="flex flex-col items-center flex-shrink-0">
                                     {item.actorAvatar ? (
-                                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mt-1.5 z-10">
-                                        <span className="text-[10px] font-bold text-white">{item.actorAvatar}</span>
-                                      </div>
+                                      (() => {
+                                        const avatarSrc = getAvatarUrl(candidate.avatar_url, candidate.github_url)
+                                        return avatarSrc ? (
+                                          <img src={avatarSrc} alt={candidate.name} className="w-8 h-8 rounded-full object-cover mt-1.5 z-10 flex-shrink-0" />
+                                        ) : (
+                                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mt-1.5 z-10">
+                                            <span className="text-[10px] font-bold text-white">{item.actorAvatar}</span>
+                                          </div>
+                                        )
+                                      })()
                                     ) : (
                                       <div className={cn('w-8 h-8 rounded-full flex items-center justify-center mt-1.5 z-10', item.iconBg)}>
                                         <Icon className={cn('w-3.5 h-3.5', item.iconColor)} />

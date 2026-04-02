@@ -5,12 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, RefreshCw, Send, Mail, Phone, Briefcase,
   Loader2, AlertCircle, ArrowDown, ArrowUp,
-  Calendar, MessageSquare, X, Plus, UserPlus,
+  Calendar, MessageSquare, X, Plus, UserPlus, Archive, Inbox,
 } from 'lucide-react'
 import { formatRelativeTime, formatDate, getInitials, cn } from '@/lib/utils'
 import { get, post } from '@/lib/api'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────
 
 interface ContactedCandidate {
   id: string
@@ -59,7 +59,22 @@ interface ComposeTarget {
   candidate_email: string
 }
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+// ─── localStorage key ────────────────────────────────────────────
+const ARCHIVE_KEY = 'outreach_archived_ids'
+
+function getArchivedIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = localStorage.getItem(ARCHIVE_KEY)
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+  } catch { return new Set() }
+}
+
+function saveArchivedIds(ids: Set<string>) {
+  try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify([...ids])) } catch {}
+}
+
+// ─── Config ──────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; badge: string }> = {
   scheduled: { label: 'Scheduled', dot: 'bg-blue-500',    badge: 'text-blue-700 bg-blue-50 border-blue-200' },
@@ -74,7 +89,7 @@ const SOURCE_CONFIG: Record<string, { label: string; style: string }> = {
   sourced: { label: 'Sourced', style: 'text-purple-700 bg-purple-50 border-purple-200' },
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Sub-components ──────────────────────────────────────────────
 
 function AvatarInitials({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   const sizeClass = { sm: 'w-8 h-8 text-xs', md: 'w-10 h-10 text-sm', lg: 'w-12 h-12 text-base' }[size]
@@ -89,7 +104,6 @@ function AvatarInitials({ name, size = 'md' }: { name: string; size?: 'sm' | 'md
   )
 }
 
-// Candidate picker – step 1 of new outreach
 function CandidatePickerModal({ open, onClose, onSelect }: {
   open: boolean
   onClose: () => void
@@ -102,8 +116,8 @@ function CandidatePickerModal({ open, onClose, onSelect }: {
   useEffect(() => {
     if (!open) return
     setLoading(true)
-    get<{ items: ApiCandidate[] }>('/api/v1/candidates?page=1&page_size=200')
-      .then(r => setCandidates(r.items ?? []))
+    get<ApiCandidate[]>('/api/v1/candidates')
+      .then(r => setCandidates(r))
       .catch(() => setCandidates([]))
       .finally(() => setLoading(false))
   }, [open])
@@ -178,7 +192,6 @@ function CandidatePickerModal({ open, onClose, onSelect }: {
   )
 }
 
-// Compose email – step 2 of new outreach
 function ComposeModal({ target, googleStatus, onClose, onSent }: {
   target: ComposeTarget
   googleStatus: GoogleStatus
@@ -281,32 +294,48 @@ function GmailIcon() {
   )
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main Page ───────────────────────────────────────────────────
 
 export default function OutreachPage() {
-  const [contacts, setContacts]         = useState<ContactedCandidate[]>([])
-  const [loading, setLoading]           = useState(true)
-  const [search, setSearch]             = useState('')
-  const [selected, setSelected]         = useState<ContactedCandidate | null>(null)
+  const [contacts, setContacts]           = useState<ContactedCandidate[]>([])
+  const [loading, setLoading]             = useState(true)
+  const [tab, setTab]                     = useState<'active' | 'archive'>('active')
+  const [archivedIds, setArchivedIds]     = useState<Set<string>>(new Set())
+  const [search, setSearch]               = useState('')
+  const [selected, setSelected]           = useState<ContactedCandidate | null>(null)
 
-  const [messages, setMessages]         = useState<EmailMessage[]>([])
-  const [convLoading, setConvLoading]   = useState(false)
-  const [syncing, setSyncing]           = useState(false)
+  const [messages, setMessages]           = useState<EmailMessage[]>([])
+  const [convLoading, setConvLoading]     = useState(false)
+  const [syncing, setSyncing]             = useState(false)
 
-  const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false })
+  const [googleStatus, setGoogleStatus]   = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false })
 
-  const [pickerOpen, setPickerOpen]     = useState(false)
+  const [pickerOpen, setPickerOpen]       = useState(false)
   const [composeTarget, setComposeTarget] = useState<ComposeTarget | null>(null)
 
-  const [replySubject, setReplySubject] = useState('')
-  const [replyBody, setReplyBody]       = useState('')
-  const [sending, setSending]           = useState(false)
-  const [sendError, setSendError]       = useState<string | null>(null)
+  const [replySubject, setReplySubject]   = useState('')
+  const [replyBody, setReplyBody]         = useState('')
+  const [sending, setSending]             = useState(false)
+  const [sendError, setSendError]         = useState<string | null>(null)
 
-  // All candidates for sidebar search
   const [allCandidates, setAllCandidates] = useState<ApiCandidate[]>([])
 
   const threadRef = useRef<HTMLDivElement>(null)
+
+  // Load archived IDs from localStorage on mount
+  useEffect(() => { setArchivedIds(getArchivedIds()) }, [])
+
+  const toggleArchive = (id: string) => {
+    setArchivedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      saveArchivedIds(next)
+      return next
+    })
+    // If the currently selected contact is being archived, deselect it
+    setSelected(prev => prev?.id === id ? null : prev)
+  }
 
   const loadContacts = useCallback(async () => {
     setLoading(true)
@@ -314,7 +343,7 @@ export default function OutreachPage() {
       const [msgs, gStatus, allC] = await Promise.all([
         get<ContactedCandidate[]>('/api/v1/outreach/messages').catch(() => [] as ContactedCandidate[]),
         get<GoogleStatus>('/api/v1/google/status').catch(() => ({ gmail_connected: false, gcal_connected: false } as GoogleStatus)),
-        get<{ items: ApiCandidate[] }>('/api/v1/candidates?page=1&page_size=500').then(r => r.items ?? []).catch(() => [] as ApiCandidate[]),
+        get<ApiCandidate[]>('/api/v1/candidates').catch(() => [] as ApiCandidate[]),
       ])
       setContacts(msgs)
       setGoogleStatus(gStatus)
@@ -366,18 +395,23 @@ export default function OutreachPage() {
     finally { setSending(false) }
   }
 
-  // When searching: show matching contacts OR uncontacted candidates that match
+  // Split contacts into active / archived purely by client-side cache
+  const activeContacts   = contacts.filter(c => !archivedIds.has(c.id))
+  const archivedContacts = contacts.filter(c => archivedIds.has(c.id))
+  const visibleContacts  = tab === 'active' ? activeContacts : archivedContacts
+
   const contactedIds = new Set(contacts.map(c => c.candidate_id))
   const q = search.toLowerCase()
+
   const filteredContacts = search
-    ? contacts.filter(c =>
+    ? visibleContacts.filter(c =>
         (c.candidate_name ?? '').toLowerCase().includes(q) ||
         (c.subject ?? '').toLowerCase().includes(q) ||
         (c.candidate_email ?? '').toLowerCase().includes(q)
       )
-    : contacts
-  // Candidates not yet in contacts list that match the search query
-  const unmatchedCandidates: ApiCandidate[] = search
+    : visibleContacts
+
+  const unmatchedCandidates: ApiCandidate[] = search && tab === 'active'
     ? allCandidates.filter(c =>
         !contactedIds.has(c.id) && (
           c.name.toLowerCase().includes(q) ||
@@ -397,7 +431,6 @@ export default function OutreachPage() {
   : []
 
   return (
-    // -mx-7 -mt-[67px] cancels layout px-7 pt-[67px] exactly; height fills viewport below the topbar
     <div className="fixed flex overflow-hidden bg-white" style={{ top: 67, left: 220, right: 0, bottom: 0 }}>
 
       {/* ── LEFT SIDEBAR ─────────────────────────────────────── */}
@@ -427,17 +460,35 @@ export default function OutreachPage() {
               </button>
             )}
           </div>
+
+          {/* Active / Archive tab toggle */}
           <div className="flex mt-2.5 gap-1 bg-neutral-100 rounded-lg p-0.5">
-            {['Active', 'Archive'].map(t => (
-              <button key={t} className={cn(
-                'flex-1 py-1 text-xs font-medium rounded-md transition-all',
-                t === 'Active' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
-              )}>
-                {t}{t === 'Active' && contacts.length > 0 && (
-                  <span className="ml-1 text-[10px] bg-neutral-200 text-neutral-600 rounded-full px-1.5 py-px">{contacts.length}</span>
-                )}
-              </button>
-            ))}
+            <button
+              onClick={() => { setTab('active'); setSelected(null) }}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-1 text-xs font-medium rounded-md transition-all',
+                tab === 'active' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
+              )}
+            >
+              <Inbox className="w-3 h-3" />
+              Active
+              {activeContacts.length > 0 && (
+                <span className="text-[10px] bg-neutral-200 text-neutral-600 rounded-full px-1.5 py-px">{activeContacts.length}</span>
+              )}
+            </button>
+            <button
+              onClick={() => { setTab('archive'); setSelected(null) }}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-1 text-xs font-medium rounded-md transition-all',
+                tab === 'archive' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
+              )}
+            >
+              <Archive className="w-3 h-3" />
+              Archive
+              {archivedContacts.length > 0 && (
+                <span className="text-[10px] bg-neutral-200 text-neutral-600 rounded-full px-1.5 py-px">{archivedContacts.length}</span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -448,49 +499,66 @@ export default function OutreachPage() {
             </div>
           ) : filteredContacts.length === 0 && unmatchedCandidates.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-neutral-400 text-xs gap-2">
-              <Mail className="w-6 h-6 text-neutral-200" />{search ? 'No results found' : 'No contacts yet'}
+              {tab === 'archive'
+                ? <><Archive className="w-6 h-6 text-neutral-200" />{search ? 'No archived results' : 'No archived contacts'}</>
+                : <><Mail className="w-6 h-6 text-neutral-200" />{search ? 'No results found' : 'No contacts yet'}</>
+              }
             </div>
           ) : (
             <>
-              {/* Contacted people */}
               {filteredContacts.map((c, i) => {
                 const cfg = STATUS_CONFIG[c.status] ?? STATUS_CONFIG.sent
                 const isActive = selected?.id === c.id
+                const isArchived = archivedIds.has(c.id)
                 return (
-                  <motion.button
+                  <motion.div
                     key={c.id}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.03 }}
-                    onClick={() => setSelected(c)}
-                    className={cn(
-                      'w-full flex items-start gap-3 px-4 py-3 border-b border-neutral-50 text-left transition-colors',
-                      isActive ? 'bg-neutral-50' : 'hover:bg-neutral-50/70'
-                    )}
+                    className="group relative"
                   >
-                    <div className="relative flex-shrink-0 mt-0.5">
-                      <AvatarInitials name={c.candidate_name} size="sm" />
-                      <span className={cn('absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white', cfg.dot)} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1">
-                        <p className="text-neutral-900 text-xs font-semibold truncate">{c.candidate_name}</p>
-                        <span className="text-neutral-400 text-[10px] flex-shrink-0">
-                          {c.sent_at ? formatRelativeTime(c.sent_at) : c.scheduled_at ? formatRelativeTime(c.scheduled_at) : '—'}
-                        </span>
-                      </div>
-                      <p className="text-neutral-500 text-[11px] truncate mt-0.5">{c.subject}</p>
-                      {!!c.unread && (
-                        <span className="mt-1 inline-flex items-center justify-center min-w-[16px] h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold px-1">
-                          {c.unread}
-                        </span>
+                    <button
+                      onClick={() => setSelected(c)}
+                      className={cn(
+                        'w-full flex items-start gap-3 px-4 py-3 border-b border-neutral-50 text-left transition-colors',
+                        isActive ? 'bg-neutral-50' : 'hover:bg-neutral-50/70'
                       )}
-                    </div>
-                  </motion.button>
+                    >
+                      <div className="relative flex-shrink-0 mt-0.5">
+                        <AvatarInitials name={c.candidate_name} size="sm" />
+                        <span className={cn('absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white', cfg.dot)} />
+                      </div>
+                      <div className="flex-1 min-w-0 pr-6">
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="text-neutral-900 text-xs font-semibold truncate">{c.candidate_name}</p>
+                          <span className="text-neutral-400 text-[10px] flex-shrink-0">
+                            {c.sent_at ? formatRelativeTime(c.sent_at) : c.scheduled_at ? formatRelativeTime(c.scheduled_at) : '—'}
+                          </span>
+                        </div>
+                        <p className="text-neutral-500 text-[11px] truncate mt-0.5">{c.subject}</p>
+                        {!!c.unread && (
+                          <span className="mt-1 inline-flex items-center justify-center min-w-[16px] h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold px-1">
+                            {c.unread}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                    {/* Archive / unarchive button — appears on hover */}
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleArchive(c.id) }}
+                      title={isArchived ? 'Move to Active' : 'Archive'}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-md bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center"
+                    >
+                      {isArchived
+                        ? <Inbox className="w-3 h-3 text-neutral-500" />
+                        : <Archive className="w-3 h-3 text-neutral-500" />
+                      }
+                    </button>
+                  </motion.div>
                 )
               })}
 
-              {/* Uncontacted candidates from DB matching the search */}
               {unmatchedCandidates.length > 0 && (
                 <>
                   <div className="px-4 py-1.5 bg-neutral-50 border-b border-neutral-100">
@@ -502,9 +570,7 @@ export default function OutreachPage() {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: i * 0.03 }}
-                      onClick={() => {
-                        setComposeTarget({ candidate_id: c.id, candidate_name: c.name, candidate_email: c.email })
-                      }}
+                      onClick={() => setComposeTarget({ candidate_id: c.id, candidate_name: c.name, candidate_email: c.email })}
                       className="w-full flex items-center gap-3 px-4 py-3 border-b border-neutral-50 text-left hover:bg-neutral-50/70 transition-colors"
                     >
                       <AvatarInitials name={c.name} size="sm" />
@@ -528,7 +594,6 @@ export default function OutreachPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {selected ? (
           <>
-            {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-100 flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <AvatarInitials name={selected.candidate_name} size="sm" />
@@ -538,6 +603,16 @@ export default function OutreachPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Archive toggle in thread header */}
+                <button
+                  onClick={() => toggleArchive(selected.id)}
+                  className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-800 border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 px-2.5 py-1.5 rounded-lg transition-colors"
+                >
+                  {archivedIds.has(selected.id)
+                    ? <><Inbox className="w-3 h-3" /> Unarchive</>
+                    : <><Archive className="w-3 h-3" /> Archive</>
+                  }
+                </button>
                 {googleStatus.gmail_connected && (
                   <button
                     onClick={syncConversation}
@@ -559,13 +634,11 @@ export default function OutreachPage() {
               </div>
             </div>
 
-            {/* Subject bar */}
             <div className="px-5 py-2 bg-neutral-50/60 border-b border-neutral-100 flex-shrink-0">
               <p className="text-neutral-400 text-[10px] uppercase tracking-wider font-medium">Subject</p>
               <p className="text-neutral-800 text-xs font-medium mt-0.5">{selected.subject}</p>
             </div>
 
-            {/* Thread */}
             <div ref={threadRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
               {convLoading ? (
                 <div className="flex items-center justify-center gap-2 py-12 text-neutral-400 text-xs">
@@ -618,7 +691,6 @@ export default function OutreachPage() {
               )}
             </div>
 
-            {/* Compose */}
             <div className="border-t border-neutral-100 px-4 pt-3 pb-4 flex-shrink-0 space-y-2">
               {sendError && (
                 <div className="flex items-center gap-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -670,19 +742,23 @@ export default function OutreachPage() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-neutral-400 gap-3">
-            <Mail className="w-8 h-8 text-neutral-200" />
-            <p className="text-xs">Select a contact to view the thread</p>
-            <button
-              onClick={() => setPickerOpen(true)}
-              className="flex items-center gap-2 text-xs text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" /> New outreach
-            </button>
+            {tab === 'archive'
+              ? <><Archive className="w-8 h-8 text-neutral-200" /><p className="text-xs">Select an archived contact to view the thread</p></>
+              : <><Mail className="w-8 h-8 text-neutral-200" /><p className="text-xs">Select a contact to view the thread</p></>
+            }
+            {tab === 'active' && (
+              <button
+                onClick={() => setPickerOpen(true)}
+                className="flex items-center gap-2 text-xs text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> New outreach
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* ── RIGHT DETAILS PANEL ───────────────────────────────── */}
+      {/* ── RIGHT DETAILS PANEL ──────────────────────────────── */}
       <div className="w-56 flex-shrink-0 border-l border-neutral-100 flex flex-col overflow-y-auto">
         {selected ? (
           <AnimatePresence mode="wait">
@@ -713,11 +789,14 @@ export default function OutreachPage() {
                     {sourceCfg.label}
                   </span>
                 )}
+                {archivedIds.has(selected.id) && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border text-neutral-500 bg-neutral-100 border-neutral-200 flex items-center gap-1">
+                    <Archive className="w-2.5 h-2.5" /> Archived
+                  </span>
+                )}
               </div>
 
               <div className="w-full border-t border-neutral-100 pt-4 space-y-3">
-
-                {/* Email */}
                 <div className="flex items-start gap-2.5">
                   <div className="w-6 h-6 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0 mt-0.5">
                     <Mail className="w-3 h-3 text-neutral-500" />
@@ -730,7 +809,6 @@ export default function OutreachPage() {
                   </div>
                 </div>
 
-                {/* Phone — directly below email */}
                 {selected.candidate_phone && (
                   <div className="flex items-start gap-2.5">
                     <div className="w-6 h-6 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -745,7 +823,6 @@ export default function OutreachPage() {
                   </div>
                 )}
 
-                {/* Role */}
                 {selected.role && (
                   <div className="flex items-start gap-2.5">
                     <div className="w-6 h-6 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -758,7 +835,6 @@ export default function OutreachPage() {
                   </div>
                 )}
 
-                {/* Timeline */}
                 {timelineRows.length > 0 && (
                   <div className="border-t border-neutral-100 pt-3">
                     <p className="text-neutral-400 text-[10px] uppercase tracking-wide font-medium mb-3">Timeline</p>
@@ -792,7 +868,7 @@ export default function OutreachPage() {
         )}
       </div>
 
-      {/* ── Modals ────────────────────────────────────────────── */}
+      {/* ── Modals ───────────────────────────────────────────── */}
       <AnimatePresence>
         {pickerOpen && (
           <CandidatePickerModal

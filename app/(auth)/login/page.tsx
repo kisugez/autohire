@@ -5,24 +5,24 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Link from 'next/link'
-import { Loader2, Mail, Lock, Zap } from 'lucide-react'
+import { Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { isAxiosError } from 'axios'
 import { useAuth } from '@/lib/auth-context'
 import { cn } from '@/lib/utils'
 
-// ── Schema ───────────────────────────────────────────────────────────────────
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
+  keepSignedIn: z.boolean().optional(),
 })
 
 type LoginFormValues = z.infer<typeof loginSchema>
 
-// ── Page ─────────────────────────────────────────────────────────────────────
 export default function LoginPage() {
   const { login } = useAuth()
   const [isPending, setIsPending] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const {
     register,
@@ -30,13 +30,13 @@ export default function LoginPage() {
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
+    defaultValues: { keepSignedIn: false },
   })
 
   const onSubmit = async (values: LoginFormValues) => {
     setIsPending(true)
     try {
       await login(values.email, values.password)
-      // redirect to /dashboard is handled inside login()
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 401) {
         toast.error('Invalid credentials', {
@@ -53,118 +53,159 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="w-full max-w-md">
-      {/* Logo / brand */}
-      <div className="flex items-center justify-center gap-2 mb-8">
-        <div className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center">
-          <Zap className="w-5 h-5 text-white" />
-        </div>
-        <span className="text-xl font-semibold tracking-tight text-[#F9FAFB]">
-          AutoHyre
-        </span>
-      </div>
+    <div className="min-h-screen flex">
+      {/* ── Left panel ── */}
+      <div className="flex flex-1 items-center justify-center bg-white px-8 py-12">
+        <div className="w-full max-w-[360px]">
+          {/* Brand */}
+          <div className="mb-8">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+              AutoHyre
+            </h1>
+            <p className="mt-1.5 text-sm text-gray-500 leading-relaxed">
+              Smarter hiring, faster decisions.
+              <br />
+              Sign in to continue your recruitment journey.
+            </p>
+          </div>
 
-      {/* Card */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-8 shadow-2xl">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#F9FAFB]">Welcome back</h1>
-          <p className="mt-1 text-sm text-[#6B7280]">
-            Sign in to your AutoHyre account
+          <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+            {/* Email */}
+            <div>
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700 mb-1.5"
+              >
+                Email
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="Enter email"
+                  {...register('email')}
+                  className={cn(
+                    'w-full border rounded-lg py-2.5 pl-9 pr-4 text-sm text-gray-900',
+                    'placeholder:text-gray-400 outline-none transition-all bg-white',
+                    'focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500',
+                    errors.email
+                      ? 'border-red-400 focus:ring-red-400/20 focus:border-red-400'
+                      : 'border-gray-200 hover:border-gray-300',
+                  )}
+                />
+              </div>
+              {errors.email && (
+                <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>
+              )}
+            </div>
+
+            {/* Password */}
+            <div>
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700 mb-1.5"
+              >
+                Password
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  placeholder="Enter password"
+                  {...register('password')}
+                  className={cn(
+                    'w-full border rounded-lg py-2.5 pl-9 pr-10 text-sm text-gray-900',
+                    'placeholder:text-gray-400 outline-none transition-all bg-white',
+                    'focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500',
+                    errors.password
+                      ? 'border-red-400 focus:ring-red-400/20 focus:border-red-400'
+                      : 'border-gray-200 hover:border-gray-300',
+                  )}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+              {errors.password && (
+                <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>
+              )}
+              <div className="flex justify-end mt-1.5">
+                <Link
+                  href="/forgot-password"
+                  className="text-xs text-violet-600 hover:text-violet-700 transition-colors"
+                >
+                  Forgot Password?
+                </Link>
+              </div>
+            </div>
+
+            {/* Keep me signed in */}
+            <div className="flex items-center gap-2">
+              <input
+                id="keepSignedIn"
+                type="checkbox"
+                {...register('keepSignedIn')}
+                className="w-4 h-4 rounded border-gray-300 text-violet-600 accent-violet-600"
+              />
+              <label htmlFor="keepSignedIn" className="text-sm text-gray-600 cursor-pointer">
+                Keep me signed in
+              </label>
+            </div>
+
+            {/* Submit */}
+            <button
+              type="submit"
+              disabled={isPending}
+              className={cn(
+                'w-full flex items-center justify-center gap-2 mt-2',
+                'bg-violet-600 hover:bg-violet-700 disabled:opacity-60 disabled:cursor-not-allowed',
+                'text-white text-sm font-medium py-2.5 rounded-lg transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2',
+              )}
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Signing in…
+                </>
+              ) : (
+                'Sign In'
+              )}
+            </button>
+          </form>
+
+          {/* Register link */}
+          <p className="mt-6 text-center text-sm text-gray-500">
+            Don&apos;t Have an Account?{' '}
+            <Link
+              href="/register"
+              className="text-violet-600 hover:text-violet-700 font-medium transition-colors"
+            >
+              Sign Up
+            </Link>
           </p>
         </div>
+      </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
-          {/* Email */}
-          <div className="space-y-1.5">
-            <label htmlFor="email" className="block text-sm font-medium text-[#D1D5DB]">
-              Email
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4B5563] pointer-events-none" />
-              <input
-                id="email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@company.com"
-                {...register('email')}
-                className={cn(
-                  'w-full bg-[#0B0F19] border rounded-lg py-2.5 pl-10 pr-4',
-                  'text-sm text-[#F9FAFB] placeholder:text-[#4B5563]',
-                  'outline-none transition-colors',
-                  'focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
-                  errors.email
-                    ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                    : 'border-[#1F2937] hover:border-[#374151]',
-                )}
-              />
-            </div>
-            {errors.email && (
-              <p className="text-xs text-red-400 mt-1">{errors.email.message}</p>
-            )}
-          </div>
-
-          {/* Password */}
-          <div className="space-y-1.5">
-            <label htmlFor="password" className="block text-sm font-medium text-[#D1D5DB]">
-              Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4B5563] pointer-events-none" />
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="••••••••"
-                {...register('password')}
-                className={cn(
-                  'w-full bg-[#0B0F19] border rounded-lg py-2.5 pl-10 pr-4',
-                  'text-sm text-[#F9FAFB] placeholder:text-[#4B5563]',
-                  'outline-none transition-colors',
-                  'focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
-                  errors.password
-                    ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                    : 'border-[#1F2937] hover:border-[#374151]',
-                )}
-              />
-            </div>
-            {errors.password && (
-              <p className="text-xs text-red-400 mt-1">{errors.password.message}</p>
-            )}
-          </div>
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={isPending}
-            className={cn(
-              'w-full flex items-center justify-center gap-2',
-              'bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed',
-              'text-white text-sm font-medium py-2.5 rounded-lg transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
-              'focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]',
-            )}
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Signing in…
-              </>
-            ) : (
-              'Sign in'
-            )}
-          </button>
-        </form>
-
-        {/* Register link */}
-        <p className="mt-6 text-center text-sm text-[#6B7280]">
-          Don&apos;t have an account?{' '}
-          <Link
-            href="/register"
-            className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
-          >
-            Register
-          </Link>
-        </p>
+      {/* ── Right panel — GIF fills the right side ── */}
+      <div className="hidden lg:flex w-[45%] rounded-r-xl overflow-hidden">
+        <img
+          src="/original-a256fc211bd748036134c22b5777d44a.gif"
+          alt=""
+          className="w-full h-full object-cover"
+        />
       </div>
     </div>
   )

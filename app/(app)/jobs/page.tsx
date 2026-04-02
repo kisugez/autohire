@@ -42,14 +42,13 @@ const JOB_TYPE_LABEL: Record<string, string> = {
   internship:'Internship',
 }
 
-/* pipeline stage definitions — matches detail page stageOrder exactly */
 const PIPELINE: {
   key: string
   label: string
   icon: React.ElementType
   barColor: string
   countColor: string
-  beforeSep?: boolean  // render ">>" before this stage
+  beforeSep?: boolean
 }[] = [
   { key: 'total',     label: 'Application', icon: FileText,      barColor: 'bg-orange-400', countColor: 'text-orange-600' },
   { key: 'sourced',   label: 'Sourced',     icon: Users,         barColor: 'bg-violet-400', countColor: 'text-violet-600' },
@@ -59,24 +58,23 @@ const PIPELINE: {
   { key: 'hired',     label: 'Hired',       icon: UserCheck,     barColor: 'bg-green-500',  countColor: 'text-green-600', beforeSep: true },
 ]
 
-/* Circular progress ring used for "Job Available" */
 function RingProgress({ value, max }: { value: number; max: number }) {
   const pct   = Math.min(value / max, 1)
-  const r     = 7
+  const r     = 5.5
   const circ  = 2 * Math.PI * r
   const dash  = circ * (1 - pct)
   const done  = value >= max
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" className="flex-shrink-0">
-      <circle cx="9" cy="9" r={r} fill="none" stroke="#e5e7eb" strokeWidth="2.5" />
+    <svg width="14" height="14" viewBox="0 0 14 14" className="flex-shrink-0">
+      <circle cx="7" cy="7" r={r} fill="none" stroke="#e5e7eb" strokeWidth="2" />
       <circle
-        cx="9" cy="9" r={r} fill="none"
+        cx="7" cy="7" r={r} fill="none"
         stroke={done ? '#22c55e' : '#6366f1'}
-        strokeWidth="2.5"
+        strokeWidth="2"
         strokeDasharray={circ}
         strokeDashoffset={dash}
         strokeLinecap="round"
-        transform="rotate(-90 9 9)"
+        transform="rotate(-90 7 7)"
       />
     </svg>
   )
@@ -98,14 +96,10 @@ export default function JobsPage() {
   const [archiving,   setArchiving]   = useState<string | null>(null)
   const [linkLoading, setLinkLoading] = useState<string | null>(null)
   const [copiedId,    setCopiedId]    = useState<string | null>(null)
-  const [liked,        setLiked]        = useState<Set<string>>(new Set())
-  // appsByJob[jobId] = ApiApplication[] — populated using the exact same
-  // endpoint the detail page uses: /api/v1/applications/job/:id
-  const [appsByJob,    setAppsByJob]    = useState<Record<string, ApiApplication[]>>({})
-  const [appsLoading,  setAppsLoading]  = useState(false)
+  const [liked,       setLiked]       = useState<Set<string>>(new Set())
+  const [appsByJob,   setAppsByJob]   = useState<Record<string, ApiApplication[]>>({})
+  const [appsLoading, setAppsLoading] = useState(false)
 
-  /* Once jobs are loaded, fetch each job's applications in parallel —
-     same URL the detail page uses, just fired for every job at once */
   useEffect(() => {
     if (!jobs.length || appsLoading) return
     setAppsLoading(true)
@@ -123,7 +117,6 @@ export default function JobsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs])
 
-  /* tab counts */
   const counts: Record<Tab, number> = {
     'All':    jobs.length,
     'Active': jobs.filter(j => j.status === 'active').length,
@@ -132,7 +125,6 @@ export default function JobsPage() {
     'Closed': jobs.filter(j => j.status === 'closed').length,
   }
 
-  /* filter */
   const filtered = jobs.filter(job => {
     const q = search.toLowerCase()
     const matchSearch = job.title.toLowerCase().includes(q) ||
@@ -147,7 +139,6 @@ export default function JobsPage() {
     return matchSearch && matchTab
   })
 
-  /* actions */
   const openEdit = (job: ApiJob) => { setEditJob(job); setModalOpen(true); setMenuOpen(null) }
 
   const handleArchive = async (id: string) => {
@@ -156,12 +147,14 @@ export default function JobsPage() {
   }
 
   const handleGetLink = async (job: ApiJob) => {
-    setMenuOpen(null); setLinkLoading(job.id)
+    setMenuOpen(null)
+    setLinkLoading(job.id)
     try {
       const link = await post<JobLinkResponse>(`/api/v1/jobs/${job.id}/links`, {
-        source: 'direct', label: 'Direct Link',
+        source: 'direct',
+        label: 'Direct Link',
       })
-      const url = `${window.location.origin}/jobs/${link.slug}`
+      const url = `${window.location.origin}/apply/${link.slug}`
       await navigator.clipboard.writeText(url)
       setCopiedId(job.id)
       setTimeout(() => setCopiedId(null), 2500)
@@ -171,8 +164,6 @@ export default function JobsPage() {
   const toggleLike = (id: string) =>
     setLiked(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
-  /* pipeline counts — uses the same /api/v1/applications/job/:id data
-     as the detail page; stageOrder = ['sourced','screening','interview','offer','hired'] */
   const getPipeline = (job: ApiJob) => {
     const jobApps = appsByJob[job.id] ?? []
     const count   = (stage: string) => jobApps.filter(a => a.current_stage === stage).length
@@ -186,20 +177,19 @@ export default function JobsPage() {
     }
   }
 
-  /* available spots */
   const getAvailable = (job: ApiJob) => ({
     filled: (job as any).positions_filled ?? 3,
     total:  (job as any).positions_total  ?? 10,
   })
 
   return (
-    <div className="space-y-6 px-3 pt-4">
+    <div className="space-y-3 px-2 pt-3">
 
       {/* ── top bar ── */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
 
         {/* tabs */}
-        <div className="flex items-center gap-1 bg-neutral-100 rounded-xl p-1">
+        <div className="flex items-center gap-0.5 bg-neutral-100 rounded-lg p-0.5">
           {TABS.map(tab => {
             const active = tab === activeTab
             const count  = counts[tab]
@@ -208,7 +198,7 @@ export default function JobsPage() {
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap',
+                  'flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap',
                   active
                     ? 'bg-white text-neutral-900 shadow-sm'
                     : 'text-neutral-500 hover:text-neutral-700',
@@ -217,7 +207,7 @@ export default function JobsPage() {
                 {tab}
                 {count > 0 && (
                   <span className={cn(
-                    'text-xs font-semibold px-1.5 py-0.5 rounded-md min-w-[20px] text-center',
+                    'text-[10px] font-semibold px-1 py-px rounded min-w-[16px] text-center',
                     active
                       ? 'bg-indigo-600 text-white'
                       : 'bg-neutral-200 text-neutral-500',
@@ -231,48 +221,48 @@ export default function JobsPage() {
         </div>
 
         {/* right controls */}
-        <div className="flex items-center gap-2 ml-auto">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search…" className="w-52" />
-          <button className="flex items-center gap-1.5 px-3 py-2 text-sm text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
-            <Clock className="w-3.5 h-3.5" /> Date added
+        <div className="flex items-center gap-1.5 ml-auto">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search…" className="w-44" />
+          <button className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
+            <Clock className="w-3 h-3" /> Date added
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-2 text-sm text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
+          <button className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
             Filter
           </button>
           <button
             onClick={() => { setEditJob(null); setModalOpen(true) }}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
           >
-            <Plus className="w-4 h-4" /> Create Job
+            <Plus className="w-3 h-3" /> Create Job
           </button>
         </div>
       </div>
 
       {/* ── error ── */}
       {error && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />{error}
         </div>
       )}
 
       {/* ── loading ── */}
       {loading && (
-        <div className="flex items-center justify-center gap-2 py-20 text-neutral-400 text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading jobs…
+        <div className="flex items-center justify-center gap-2 py-16 text-neutral-400 text-xs">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading jobs…
         </div>
       )}
 
       {/* ── cards ── */}
       {!loading && (
-        <div className="space-y-4">
+        <div className="space-y-2.5">
           {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-neutral-400 text-sm gap-3">
+            <div className="flex flex-col items-center justify-center py-16 text-neutral-400 text-xs gap-2">
               <span>No jobs match your filters.</span>
               <button
                 onClick={() => { setEditJob(null); setModalOpen(true) }}
                 className="text-indigo-600 text-xs hover:text-indigo-700 flex items-center gap-1"
               >
-                <Plus className="w-3.5 h-3.5" /> Post your first job
+                <Plus className="w-3 h-3" /> Post your first job
               </button>
             </div>
           ) : (
@@ -281,56 +271,58 @@ export default function JobsPage() {
               const available = getAvailable(job)
               const statusCfg = STATUS_LABEL[job.status] ?? STATUS_LABEL.draft
               const isLiked   = liked.has(job.id)
+              const isCopied  = copiedId === job.id
+              const isLinking = linkLoading === job.id
 
               return (
                 <motion.div
                   key={job.id}
-                  initial={{ opacity: 0, y: 8 }}
+                  initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.04 }}
                   className={cn(
-                    'bg-white border border-neutral-200 rounded-xl border-l-4 overflow-hidden transition-shadow hover:shadow-sm',
+                    'bg-white border border-neutral-200 rounded-lg border-l-4 overflow-hidden transition-shadow hover:shadow-sm',
                     STATUS_BORDER[job.status] ?? 'border-l-neutral-300',
                     archiving === job.id && 'opacity-40 pointer-events-none',
                   )}
                 >
                   {/* ── card header ── */}
-                  <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-4">
+                  <div className="px-3.5 pt-3 pb-2 flex items-start justify-between gap-3">
                     {/* left: title + badges */}
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-neutral-900 font-semibold text-base leading-tight">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h2 className="text-neutral-900 font-semibold text-sm leading-tight">
                           {job.title}
                         </h2>
                         {/* status badge */}
                         <span className={cn(
-                          'inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border',
+                          'inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-px rounded-full border',
                           statusCfg.color,
                         )}>
-                          {job.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block" />}
-                          {job.status === 'closed' && <CheckCircle2 className="w-3 h-3" />}
-                          {job.status === 'draft'  && <FileText className="w-3 h-3" />}
+                          {job.status === 'active' && <span className="w-1 h-1 rounded-full bg-indigo-500 inline-block" />}
+                          {job.status === 'closed' && <CheckCircle2 className="w-2.5 h-2.5" />}
+                          {job.status === 'draft'  && <FileText className="w-2.5 h-2.5" />}
                           {statusCfg.label}
                         </span>
                         {(job as any).assigned_to_me && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
-                            <Users className="w-3 h-3" /> Assigned to me
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-px rounded-full bg-blue-50 text-blue-600 border border-blue-200">
+                            <Users className="w-2.5 h-2.5" /> Assigned to me
                           </span>
                         )}
                       </div>
 
                       {/* meta row */}
-                      <div className="flex items-center gap-3 mt-1.5 text-neutral-400 text-xs flex-wrap">
+                      <div className="flex items-center gap-2.5 mt-1 text-neutral-400 text-[11px] flex-wrap">
                         <span className="font-mono text-neutral-400">ID: #{job.id.slice(0, 4).toUpperCase()}</span>
-                        <span className="flex items-center gap-1">
-                          {job.job_type === 'full_time' || job.job_type === 'part_time'
-                            ? <Clock className="w-3 h-3" />
-                            : <Briefcase className="w-3 h-3" />}
+                        <span className="flex items-center gap-0.5">
+                          {['full_time', 'part_time'].includes(job.job_type)
+                            ? <Clock className="w-2.5 h-2.5" />
+                            : <Briefcase className="w-2.5 h-2.5" />}
                           {JOB_TYPE_LABEL[job.job_type] ?? job.job_type}
                         </span>
                         {job.location && (
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
+                          <span className="flex items-center gap-0.5">
+                            <MapPin className="w-2.5 h-2.5" />
                             {job.location}
                             {job.remote && <span className="text-indigo-400">· Remote</span>}
                           </span>
@@ -346,8 +338,8 @@ export default function JobsPage() {
                     </div>
 
                     {/* right: date + actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0 text-sm">
-                      <span className="text-neutral-400 text-xs whitespace-nowrap">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-neutral-400 text-[11px] whitespace-nowrap">
                         Added at <span className="font-medium text-neutral-600">{formatDate(job.created_at)}</span>
                       </span>
 
@@ -355,87 +347,98 @@ export default function JobsPage() {
                       <button
                         onClick={() => toggleLike(job.id)}
                         className={cn(
-                          'w-8 h-8 flex items-center justify-center rounded-lg transition-colors',
+                          'w-6 h-6 flex items-center justify-center rounded transition-colors',
                           isLiked ? 'text-rose-500 bg-rose-50' : 'text-neutral-300 hover:text-rose-400 hover:bg-rose-50',
                         )}
                       >
-                        <Heart className="w-4 h-4" fill={isLiked ? 'currentColor' : 'none'} />
+                        <Heart className="w-3 h-3" fill={isLiked ? 'currentColor' : 'none'} />
                       </button>
 
                       {/* three-dot */}
                       <div className="relative">
                         <button
                           onClick={() => setMenuOpen(menuOpen === job.id ? null : job.id)}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
+                          className="w-6 h-6 flex items-center justify-center rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
                         >
-                          <MoreHorizontal className="w-4 h-4" />
+                          <MoreHorizontal className="w-3 h-3" />
                         </button>
 
                         {menuOpen === job.id && (
-                          <div className="absolute right-0 top-9 z-20 bg-white border border-neutral-200 rounded-xl shadow-lg py-1.5 w-44">
+                          <div className="absolute right-0 top-7 z-20 bg-white border border-neutral-200 rounded-lg shadow-lg py-1 w-36">
                             <button
                               onClick={() => openEdit(job)}
-                              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition-colors"
                             >
-                              <Pencil className="w-3.5 h-3.5 text-neutral-400" /> Edit Job
+                              <Pencil className="w-3 h-3 text-neutral-400" /> Edit Job
                             </button>
                             <button
                               onClick={() => handleGetLink(job)}
-                              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-indigo-600 hover:bg-indigo-50 transition-colors"
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 transition-colors"
                             >
-                              {linkLoading === job.id
-                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                : copiedId === job.id
-                                  ? <Check className="w-3.5 h-3.5 text-green-600" />
-                                  : <Link2 className="w-3.5 h-3.5" />}
-                              {copiedId === job.id ? 'Link Copied!' : 'Copy Link'}
+                              {isLinking
+                                ? <Loader2 className="w-3 h-3 animate-spin" />
+                                : isCopied
+                                  ? <Check className="w-3 h-3 text-green-600" />
+                                  : <Link2 className="w-3 h-3" />}
+                              {isCopied ? 'Link Copied!' : 'Copy Link'}
                             </button>
-                            <div className="border-t border-neutral-100 my-1" />
+                            <div className="border-t border-neutral-100 my-0.5" />
                             <button
                               onClick={() => handleArchive(job.id)}
                               disabled={job.status === 'closed'}
-                              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                              <Archive className="w-3.5 h-3.5" /> Archive
+                              <Archive className="w-3 h-3" /> Archive
                             </button>
                           </div>
                         )}
                       </div>
 
-                      {/* share */}
-                      <button className="w-8 h-8 flex items-center justify-center rounded-lg text-neutral-300 hover:text-neutral-600 hover:bg-neutral-100 transition-colors">
-                        <Share2 className="w-4 h-4" />
+                      {/* Share */}
+                      <button
+                        onClick={() => handleGetLink(job)}
+                        disabled={isLinking}
+                        title={isCopied ? 'Link copied!' : 'Copy application link'}
+                        className={cn(
+                          'w-6 h-6 flex items-center justify-center rounded transition-colors',
+                          isCopied
+                            ? 'text-green-600 bg-green-50'
+                            : 'text-neutral-300 hover:text-neutral-600 hover:bg-neutral-100',
+                        )}
+                      >
+                        {isLinking
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : isCopied
+                            ? <Check className="w-3 h-3" />
+                            : <Share2 className="w-3 h-3" />}
                       </button>
 
                       {/* detail */}
                       <Link
                         href={`/jobs/${job.id}`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 hover:border-neutral-300 transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-neutral-700 border border-neutral-200 rounded-md hover:bg-neutral-50 hover:border-neutral-300 transition-colors"
                       >
-                        Detail <ChevronRight className="w-3.5 h-3.5" />
+                        Detail <ChevronRight className="w-3 h-3" />
                       </Link>
                     </div>
                   </div>
 
-                  {/* ── pipeline strip — always shown, draft jobs show 0s ── */}
-                  <div className="border-t border-neutral-100 px-6 py-3.5 flex items-center gap-3 overflow-x-auto">
+                  {/* ── pipeline strip ── */}
+                  <div className="border-t border-neutral-100 px-4 py-2 flex items-center gap-2 overflow-x-auto">
                     {PIPELINE.map((stage) => {
-                      const count   = (pipeline as any)[stage.key] ?? 0
-                      const isHired = stage.key === 'hired'
+                      const count = (pipeline as any)[stage.key] ?? 0
                       return (
-                        <div key={stage.key} className="flex items-center gap-3 flex-shrink-0">
-                          {/* ">>" separator before Hired */}
+                        <div key={stage.key} className="flex items-center gap-2 flex-shrink-0">
                           {stage.beforeSep && (
                             <div className="text-neutral-300">
-                              <SkipForward className="w-3.5 h-3.5" />
+                              <SkipForward className="w-3 h-3" />
                             </div>
                           )}
-                          {/* bordered pill */}
-                          <div className="flex items-center gap-2 border border-neutral-200 rounded-lg px-3 py-1.5 bg-white hover:border-neutral-300 transition-colors">
-                            <stage.icon className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
-                            <span className="text-xs text-neutral-500 whitespace-nowrap font-medium">{stage.label}</span>
-                            <span className={cn('w-px h-3.5 rounded-full flex-shrink-0', stage.barColor)} />
-                            <span className={cn('text-xs font-bold min-w-[16px]', stage.countColor)}>
+                          <div className="flex items-center gap-1.5 border border-neutral-200 rounded-md px-2 py-1 bg-white hover:border-neutral-300 transition-colors">
+                            <stage.icon className="w-3 h-3 text-neutral-400 flex-shrink-0" />
+                            <span className="text-[11px] text-neutral-500 whitespace-nowrap font-medium">{stage.label}</span>
+                            <span className={cn('w-px h-3 rounded-full flex-shrink-0', stage.barColor)} />
+                            <span className={cn('text-[11px] font-bold min-w-[12px]', stage.countColor)}>
                               {count}
                             </span>
                           </div>

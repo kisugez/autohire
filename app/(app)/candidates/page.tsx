@@ -10,7 +10,7 @@ import {
   UserCheck, XCircle, Heart, MoreHorizontal,
 } from 'lucide-react'
 import FilterDropdown from '@/components/cards/filter-dropdown'
-import { getInitials, cn } from '@/lib/utils'
+import { getInitials, cn, getAvatarUrl } from '@/lib/utils'
 import { useCandidates, useJobs, useAllApplications } from '@/lib/hooks'
 import type { ApiCandidate } from '@/types/candidate'
 import type { ApiApplication } from '@/types/job'
@@ -367,9 +367,16 @@ export default function CandidatesPage() {
                     {/* Name */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-md bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-                          {getInitials(candidate.name)}
-                        </div>
+                        {(() => {
+                          const avatarSrc = getAvatarUrl((candidate as any).avatar_url, (candidate as any).github_url)
+                          return avatarSrc ? (
+                            <img src={avatarSrc} alt={candidate.name} className="w-7 h-7 rounded-md object-cover flex-shrink-0" />
+                          ) : (
+                            <div className="w-7 h-7 rounded-md bg-neutral-950 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                              {getInitials(candidate.name)}
+                            </div>
+                          )
+                        })()}
                         <div>
                           <Link href={`/candidates/${candidate.id}`}>
                             <p className="text-neutral-900 text-sm font-medium hover:text-indigo-600 transition-colors whitespace-nowrap">

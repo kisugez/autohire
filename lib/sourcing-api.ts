@@ -6,7 +6,7 @@ export interface ParsedQuery {
   experience_min: number | null
   industry: string | null
   skills: string[]
-  detected: string[]  // which criteria were found: 'location' | 'job_title' | 'experience' | 'industry' | 'skills'
+  detected: string[]
 }
 
 export interface SourcingRunCreate {
@@ -25,43 +25,66 @@ export interface SourcingRunCreate {
 
 export interface SourcingRun {
   id: string
-  job_id: string
-  org_id: string
-  platforms: string[]
+  job_id?: string | null
+  org_id?: string | null
+  platforms?: string[]
   criteria: Record<string, unknown>
   status: 'queued' | 'running' | 'completed' | 'failed'
-  candidates_found: number
-  candidates_scored: number
+  candidates_found?: number
+  candidates_scored?: number
   created_at: string
-  completed_at: string | null
+  completed_at?: string | null
+}
+
+export interface RawExperience {
+  title: string
+  company: string
+  date?: string
+}
+
+export interface RawEducation {
+  degree: string
+  school: string
+  date?: string
+}
+
+export interface RawSkillSection {
+  label: string
+  skills: string[]
 }
 
 export interface SourcingCandidate {
   id: string
-  run_id: string
-  candidate_id: string
-  job_id: string
+  run_id?: string
+  candidate_id?: string
+  job_id?: string
   ai_score: number | null
   ai_reasoning: string | null
-  outreach_status: string
-  created_at: string
+  outreach_status?: string
+  created_at?: string
   candidate: {
-    id: string
+    id?: string
     name: string
-    email: string | null
-    title: string | null
-    company: string | null
-    location: string | null
-    experience: number | null
-    skills: string[] | null
-    linkedin_url: string | null
-    github_url: string | null
-    source: string
-    raw_profile: {
+    email?: string | null
+    title?: string | null
+    company?: string | null
+    location?: string | null
+    experience?: number | null
+    skills?: string[] | null
+    linkedin_url?: string | null
+    github_url?: string | null
+    source?: string
+    raw_profile?: {
       photo_url?: string
       headline?: string
       summary?: string
+      education_raw?: string[]
       experience_raw?: string[]
+      experiences?: RawExperience[]
+      educations?: RawEducation[]
+      skill_sections?: RawSkillSection[]
+      tags?: string[]
+      company_logo?: string
       top_repos?: { name: string; stars: number; language: string; url: string }[]
       [key: string]: unknown
     } | null
@@ -69,7 +92,6 @@ export interface SourcingCandidate {
 }
 
 export const sourcingApi = {
-  // Send raw query string to backend — backend parses and returns structured criteria
   parseQuery: (query: string) =>
     post<ParsedQuery>('/api/v1/sourcing/parse-query', { query }),
 
@@ -84,4 +106,10 @@ export const sourcingApi = {
 
   getResults: (runId: string) =>
     get<SourcingCandidate[]>(`/api/v1/sourcing/runs/${runId}/results`),
+
+  shortlist: (candidateIds: string[], jobId: string) =>
+    post<{ created: number; skipped: number }>('/api/v1/sourcing/shortlist', {
+      candidate_ids: candidateIds,
+      job_id: jobId,
+    }),
 }

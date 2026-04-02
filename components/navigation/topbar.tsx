@@ -1,19 +1,19 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, ChevronUp, LogOut, User, CreditCard,
-  HelpCircle, X, Briefcase, Users, Plus, Bell,
+  HelpCircle, X, Briefcase, Users, Plus, Bell, Calendar,
 } from 'lucide-react'
 import { getInitials } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { useJobsContext } from '@/lib/jobs-context'
-import { useCandidates } from '@/lib/hooks'
+import { useCandidates, useAllApplications } from '@/lib/hooks'
 
-type NotifType = 'interview' | 'task' | 'job' | 'offer'
+type NotifType = 'application' | 'interview' | 'offer' | 'job'
 
 interface Notification {
   id: string
@@ -25,112 +25,52 @@ interface Notification {
   message: string
   bold: string
   time: string
-  date: 'today' | 'yesterday'
+  date: 'today' | 'earlier'
   unread?: boolean
-  actionable?: boolean
+  href?: string
 }
 
-const notifications: Notification[] = [
-  {
-    id: '1',
-    type: 'interview',
-    actor: 'Aditya Irawan',
-    actorInitials: 'AI',
-    actorColor: '#c8c3f8',
-    actorTextColor: '#26215C',
-    message: 'invited you to interview for the',
-    bold: 'Math Teacher',
-    time: 'just now',
-    date: 'today',
-    unread: true,
-    actionable: true,
-  },
-  {
-    id: '2',
-    type: 'task',
-    actor: 'Amanda Nur',
-    actorInitials: 'AN',
-    actorColor: '#EEEDFE',
-    actorTextColor: '#3C3489',
-    message: 'assigned a new task to',
-    bold: 'Curriculum Alignment 2025',
-    time: '01:00 PM',
-    date: 'today',
-    unread: true,
-  },
-  {
-    id: '3',
-    type: 'job',
-    actor: 'Reminder',
-    actorInitials: 'Y',
-    actorColor: '#c8c3f8',
-    actorTextColor: '#26215C',
-    message: 'your posting',
-    bold: 'Visual Arts Teacher',
-    time: '09:21 AM',
-    date: 'today',
-  },
-  {
-    id: '4',
-    type: 'offer',
-    actor: 'Hendardar',
-    actorInitials: 'H',
-    actorColor: '#F7C1C1',
-    actorTextColor: '#791F1F',
-    message: 'declined the offer for',
-    bold: 'Math Teacher',
-    time: '02:00 PM',
-    date: 'yesterday',
-  },
-  {
-    id: '5',
-    type: 'task',
-    actor: 'Ghozy Muhtarom',
-    actorInitials: 'GM',
-    actorColor: '#B5D4F4',
-    actorTextColor: '#0C447C',
-    message: 'assigned a new task to',
-    bold: 'Collaborative Planning',
-    time: '01:00 PM',
-    date: 'yesterday',
-  },
+const typeMeta: Record<NotifType, { label: string; bg: string; border: string; color: string; iconBg: string }> = {
+  application: { label: 'Application', bg: '#EEEDFE', border: '#CECBF6', color: '#3C3489', iconBg: '#7c6fe0' },
+  interview:   { label: 'Interview',   bg: '#EAF3DE', border: '#C0DD97', color: '#3B6D11', iconBg: '#22a06b' },
+  offer:       { label: 'Offer',       bg: '#FCEBEB', border: '#F7C1C1', color: '#A32D2D', iconBg: '#e03131' },
+  job:         { label: 'Job',         bg: '#FAEEDA', border: '#FAC775', color: '#854F0B', iconBg: '#e5a000' },
+}
+
+const AVATAR_COLORS = [
+  { bg: '#c8c3f8', text: '#26215C' },
+  { bg: '#B5D4F4', text: '#0C447C' },
+  { bg: '#FAEEDA', text: '#854F0B' },
+  { bg: '#F7C1C1', text: '#791F1F' },
+  { bg: '#C0DD97', text: '#3B6D11' },
 ]
 
-const typeMeta: Record<NotifType, { label: string; bg: string; border: string; color: string; iconBg: string; icon: string }> = {
-  interview: {
-    label: 'Interview',
-    bg: '#EEEDFE', border: '#CECBF6', color: '#3C3489',
-    iconBg: '#7c6fe0', icon: 'M2 5h6M5 2v6',
-  },
-  task: {
-    label: 'Task',
-    bg: '#EAF3DE', border: '#C0DD97', color: '#3B6D11',
-    iconBg: '#22a06b', icon: 'M2 5h6M5 2v6',
-  },
-  job: {
-    label: 'Job',
-    bg: '#FAEEDA', border: '#FAC775', color: '#854F0B',
-    iconBg: '#e5a000', icon: 'M5 2v4M5 7.5v.5',
-  },
-  offer: {
-    label: 'Offer',
-    bg: '#FCEBEB', border: '#F7C1C1', color: '#A32D2D',
-    iconBg: '#e03131', icon: 'M3 5l1.5 1.5L7 3.5',
-  },
+function avatarColor(str: string) {
+  let h = 0
+  for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h)
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+function isToday(iso: string): boolean {
+  const d = new Date(iso)
+  const n = new Date()
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
 }
 
 function TypeBadge({ type }: { type: NotifType }) {
   const m = typeMeta[type]
   return (
-    <span style={{
-      fontSize: 11,
-      background: m.bg,
-      border: `0.5px solid ${m.border}`,
-      color: m.color,
-      padding: '1px 7px',
-      borderRadius: 4,
-      fontWeight: 500,
-    }}>
+    <span style={{ fontSize: 11, background: m.bg, border: `0.5px solid ${m.border}`, color: m.color, padding: '1px 7px', borderRadius: 4, fontWeight: 500 }}>
       {m.label}
     </span>
   )
@@ -138,22 +78,11 @@ function TypeBadge({ type }: { type: NotifType }) {
 
 function TypeIconBadge({ type }: { type: NotifType }) {
   const m = typeMeta[type]
-  const isOffer = type === 'offer'
   return (
-    <div style={{
-      position: 'absolute', bottom: -1, right: -1,
-      width: 14, height: 14, borderRadius: '50%',
-      background: '#fff',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      border: '0.5px solid #e5e7eb',
-    }}>
+    <div style={{ position: 'absolute', bottom: -1, right: -1, width: 14, height: 14, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '0.5px solid #e5e7eb' }}>
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-        {isOffer
-          ? <><circle cx="5" cy="5" r="4" fill={m.iconBg} /><path d={m.icon} stroke="#fff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></>
-          : type === 'job'
-          ? <><rect width="10" height="10" rx="2" fill={m.iconBg} /><path d={m.icon} stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></>
-          : <><rect width="10" height="10" rx="2" fill={m.iconBg} /><path d={m.icon} stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></>
-        }
+        <rect width="10" height="10" rx="2" fill={m.iconBg} />
+        <path d="M2 5h6M5 2v6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
     </div>
   )
@@ -161,32 +90,22 @@ function TypeIconBadge({ type }: { type: NotifType }) {
 
 function NotifRow({ n }: { n: Notification }) {
   return (
-    <div style={{
-      padding: '11px 16px',
-      display: 'flex',
-      gap: 11,
-      alignItems: 'flex-start',
-      background: n.unread ? 'rgba(124,111,224,0.04)' : 'transparent',
-      borderLeft: n.unread ? '2.5px solid #7c6fe0' : '2.5px solid transparent',
-      borderBottom: '0.5px solid #f3f4f6',
-      cursor: 'pointer',
-      transition: 'background 0.1s',
-    }}
+    <div
+      style={{
+        padding: '11px 16px', display: 'flex', gap: 11, alignItems: 'flex-start',
+        background: n.unread ? 'rgba(124,111,224,0.04)' : 'transparent',
+        borderLeft: n.unread ? '2.5px solid #7c6fe0' : '2.5px solid transparent',
+        borderBottom: '0.5px solid #f3f4f6', cursor: 'pointer', transition: 'background 0.1s',
+      }}
       onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#fafafa' }}
       onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = n.unread ? 'rgba(124,111,224,0.04)' : 'transparent' }}
     >
       <div style={{ position: 'relative', flexShrink: 0 }}>
-        <div style={{
-          width: 34, height: 34, borderRadius: '50%',
-          background: n.actorColor,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 600, color: n.actorTextColor,
-        }}>
+        <div style={{ width: 34, height: 34, borderRadius: '50%', background: n.actorColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: n.actorTextColor }}>
           {n.actorInitials}
         </div>
         <TypeIconBadge type={n.type} />
       </div>
-
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ fontSize: 13, color: '#374151', margin: '0 0 3px', lineHeight: 1.45 }}>
           <span style={{ fontWeight: 600, color: '#111' }}>{n.actor}</span>{' '}
@@ -198,48 +117,28 @@ function NotifRow({ n }: { n: Notification }) {
           <span style={{ fontSize: 11, color: '#9ca3af' }}>·</span>
           <span style={{ fontSize: 11, color: '#9ca3af' }}>{n.time}</span>
         </div>
-        {n.actionable && (
-          <div style={{ display: 'flex', gap: 7, marginTop: 9 }}>
-            <button style={{
-              border: '0.5px solid #d1d5db', background: '#fff',
-              color: '#374151', fontSize: 12, padding: '5px 14px',
-              borderRadius: 5, cursor: 'pointer', fontWeight: 500,
-            }}>Decline</button>
-            <button style={{
-              border: 'none', background: '#7c6fe0',
-              color: '#fff', fontSize: 12, padding: '5px 14px',
-              borderRadius: 5, cursor: 'pointer', fontWeight: 500,
-            }}>Accept</button>
-          </div>
-        )}
       </div>
-
       {n.unread && (
-        <div style={{
-          width: 7, height: 7, borderRadius: '50%',
-          background: '#7c6fe0', flexShrink: 0, marginTop: 5,
-        }} />
+        <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#7c6fe0', flexShrink: 0, marginTop: 5 }} />
       )}
     </div>
   )
 }
 
-function NotificationsPanel({ onClose }: { onClose: () => void }) {
+function NotificationsPanel({ notifications, onClose }: { notifications: Notification[]; onClose: () => void }) {
   const [tab, setTab] = useState<'all' | 'unread'>('all')
-  const todayItems     = notifications.filter(n => n.date === 'today')
-  const yesterdayItems = notifications.filter(n => n.date === 'yesterday')
-  const unreadItems    = notifications.filter(n => n.unread)
-  const unreadCount    = unreadItems.length
 
-  const showToday     = tab === 'all' ? todayItems     : unreadItems.filter(n => n.date === 'today')
-  const showYesterday = tab === 'all' ? yesterdayItems : unreadItems.filter(n => n.date === 'yesterday')
+  const todayItems   = notifications.filter(n => n.date === 'today')
+  const earlierItems = notifications.filter(n => n.date === 'earlier')
+  const unreadItems  = notifications.filter(n => n.unread)
+  const unreadCount  = unreadItems.length
+
+  const showToday   = tab === 'all' ? todayItems   : unreadItems.filter(n => n.date === 'today')
+  const showEarlier = tab === 'all' ? earlierItems : unreadItems.filter(n => n.date === 'earlier')
 
   const SectionLabel = ({ label }: { label: string }) => (
     <div style={{ padding: '10px 16px 2px' }}>
-      <span style={{
-        fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
-        color: '#9ca3af', textTransform: 'uppercase',
-      }}>
+      <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: '#9ca3af', textTransform: 'uppercase' }}>
         {label}
       </span>
     </div>
@@ -259,30 +158,16 @@ function NotificationsPanel({ onClose }: { onClose: () => void }) {
         overflow: 'hidden', zIndex: 50,
       }}
     >
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', padding: '14px 16px 0',
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 0' }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>Notifications</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{
-            fontSize: 12, color: '#7c6fe0', cursor: 'pointer', fontWeight: 500,
-          }}>Mark all as read</span>
-          <button onClick={onClose} style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            padding: 0, display: 'flex', color: '#9ca3af',
-          }}>
+          <span style={{ fontSize: 12, color: '#7c6fe0', cursor: 'pointer', fontWeight: 500 }}>Mark all as read</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: '#9ca3af' }}>
             <X style={{ width: 14, height: 14 }} />
           </button>
         </div>
       </div>
-
-      {/* Tabs */}
-      <div style={{
-        display: 'flex', padding: '10px 16px 0',
-        borderBottom: '0.5px solid #f3f4f6', marginTop: 10, gap: 0,
-      }}>
+      <div style={{ display: 'flex', padding: '10px 16px 0', borderBottom: '0.5px solid #f3f4f6', marginTop: 10, gap: 0 }}>
         {(['all', 'unread'] as const).map(t => (
           <button
             key={t}
@@ -298,39 +183,232 @@ function NotificationsPanel({ onClose }: { onClose: () => void }) {
           >
             {t === 'all' ? 'All' : 'Unread'}
             {t === 'unread' && unreadCount > 0 && (
-              <span style={{
-                background: '#7c6fe0', color: '#fff',
-                fontSize: 10, fontWeight: 600,
-                padding: '1px 6px', borderRadius: 20,
-              }}>
+              <span style={{ background: '#7c6fe0', color: '#fff', fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 20 }}>
                 {unreadCount}
               </span>
             )}
           </button>
         ))}
       </div>
-
-      {/* Items */}
       <div style={{ maxHeight: 440, overflowY: 'auto' }}>
-        {showToday.length > 0 && (
-          <>
-            <SectionLabel label="Today" />
-            {showToday.map(n => <NotifRow key={n.id} n={n} />)}
-          </>
-        )}
-        {showYesterday.length > 0 && (
-          <>
-            <SectionLabel label="Yesterday" />
-            {showYesterday.map(n => <NotifRow key={n.id} n={n} />)}
-          </>
-        )}
-        {showToday.length === 0 && showYesterday.length === 0 && (
-          <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13, color: '#9ca3af' }}>
-            No notifications
-          </div>
+        {showToday.length > 0 && (<><SectionLabel label="Today" />{showToday.map(n => <NotifRow key={n.id} n={n} />)}</>)}
+        {showEarlier.length > 0 && (<><SectionLabel label="Earlier" />{showEarlier.map(n => <NotifRow key={n.id} n={n} />)}</>)}
+        {showToday.length === 0 && showEarlier.length === 0 && (
+          <div style={{ padding: '40px 16px', textAlign: 'center', fontSize: 13, color: '#9ca3af' }}>No notifications</div>
         )}
       </div>
     </motion.div>
+  )
+}
+
+function QuickActionsPanel({ onClose }: { onClose: () => void }) {
+  const router = useRouter()
+
+  const actions = [
+    { initials: 'CJ', label: 'Create Job',          sub: 'Post a new opening',            iconBg: '#EEEDFE', iconColor: '#7c6fe0', href: '/jobs' },
+    { initials: 'SI', label: 'Schedule Interview',  sub: 'Book an interview slot',         iconBg: '#EAF3DE', iconColor: '#22a06b', href: '/candidates' },
+    { initials: 'AC', label: 'Add Candidate',       sub: 'Import or create a profile',     iconBg: '#FAEEDA', iconColor: '#e5a000', href: '/candidates' },
+  ]
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.97 }}
+      transition={{ duration: 0.12 }}
+      style={{
+        position: 'absolute', right: 0, top: '100%', marginTop: 8,
+        width: 270, background: '#fff',
+        border: '0.5px solid #e5e7eb', borderRadius: 12,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+        overflow: 'hidden', zIndex: 50,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 13px', borderBottom: '0.5px solid #f3f4f6' }}>
+        <div>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#111', margin: 0 }}>Quick Actions</p>
+          <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0' }}>Shortcuts to common tasks</p>
+        </div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', color: '#9ca3af', borderRadius: 6 }}>
+          <X style={{ width: 13, height: 13 }} />
+        </button>
+      </div>
+
+      <div style={{ padding: '6px 0' }}>
+        {actions.map((a, i) => (
+          <button
+            key={a.label}
+            onClick={() => { onClose(); router.push(a.href) }}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+              padding: '11px 16px', background: 'none', border: 'none',
+              borderBottom: i < actions.length - 1 ? '0.5px solid #f9fafb' : 'none',
+              cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#fafafa' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+          >
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: a.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: a.iconColor, letterSpacing: '-0.3px' }}>
+                {a.initials}
+              </div>
+              <div style={{ position: 'absolute', bottom: -1, right: -1, width: 14, height: 14, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '0.5px solid #e5e7eb' }}>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <rect width="10" height="10" rx="2" fill={a.iconColor} />
+                  <path d="M2 5h6M5 2v6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#111', margin: 0 }}>{a.label}</p>
+              <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0' }}>{a.sub}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  )
+}
+
+function UserMenuPanel({
+  displayName, email, displayInitials, onClose, onLogout,
+}: {
+  displayName: string
+  email: string
+  displayInitials: string
+  onClose: () => void
+  onLogout: () => void
+}) {
+  const col = avatarColor(displayName)
+
+  const menuItems = [
+    { initials: 'PR', label: 'Profile',        sub: 'Edit your details',  iconBg: '#EEEDFE', iconColor: '#7c6fe0', href: '/profile' as string | null },
+    { initials: 'BI', label: 'Billing',         sub: 'Plan & payments',    iconBg: '#EAF3DE', iconColor: '#22a06b', href: null },
+    { initials: 'HS', label: 'Help & Support',  sub: 'Docs & contact us',  iconBg: '#FAEEDA', iconColor: '#e5a000', href: null },
+  ]
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.97 }}
+      transition={{ duration: 0.12 }}
+      style={{
+        position: 'absolute', right: 0, top: '100%', marginTop: 8,
+        width: 270, background: '#fff',
+        border: '0.5px solid #e5e7eb', borderRadius: 12,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+        overflow: 'hidden', zIndex: 50,
+      }}
+    >
+      {/* Header */}
+      <div style={{ padding: '14px 16px', borderBottom: '0.5px solid #f3f4f6' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{
+              width: 42, height: 42, borderRadius: '50%',
+              background: col.bg,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 14, fontWeight: 700, color: col.text, letterSpacing: '-0.3px',
+            }}>
+              {displayInitials}
+            </div>
+            <div style={{
+              position: 'absolute', bottom: 1, right: 1,
+              width: 10, height: 10, borderRadius: '50%',
+              background: '#22a06b', border: '2px solid #fff',
+            }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#111', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</p>
+            <p style={{ fontSize: 11, color: '#9ca3af', margin: '3px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</p>
+          </div>
+          <span style={{ fontSize: 10, background: '#EEEDFE', border: '0.5px solid #CECBF6', color: '#3C3489', padding: '2px 8px', borderRadius: 20, fontWeight: 500, flexShrink: 0 }}>
+            Admin
+          </span>
+        </div>
+      </div>
+
+      {/* Menu items */}
+      <div style={{ padding: '6px 0' }}>
+        {menuItems.map(item => {
+          const iconTile = (
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: item.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: item.iconColor, letterSpacing: '-0.3px' }}>
+                {item.initials}
+              </div>
+              <div style={{ position: 'absolute', bottom: -1, right: -1, width: 14, height: 14, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '0.5px solid #e5e7eb' }}>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <rect width="10" height="10" rx="2" fill={item.iconColor} />
+                  <path d="M2 5h6M5 2v6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+            </div>
+          )
+          const text = (
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 500, color: '#111', margin: 0 }}>{item.label}</p>
+              <p style={{ fontSize: 11, color: '#9ca3af', margin: '1px 0 0' }}>{item.sub}</p>
+            </div>
+          )
+          const shared: React.CSSProperties = {
+            width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 16px', background: 'none', border: 'none',
+            cursor: 'pointer', textAlign: 'left', textDecoration: 'none', transition: 'background 0.1s',
+          }
+          return item.href ? (
+            <Link key={item.label} href={item.href} onClick={onClose} style={shared}
+              onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = '#fafafa'}
+              onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'}
+            >{iconTile}{text}</Link>
+          ) : (
+            <button key={item.label} style={shared}
+              onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#fafafa'}
+              onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
+            >{iconTile}{text}</button>
+          )
+        })}
+      </div>
+
+      {/* Sign out */}
+      <div style={{ borderTop: '0.5px solid #f3f4f6', padding: '6px 0' }}>
+        <button
+          onClick={onLogout}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s' }}
+          onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#fef2f2'}
+          onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
+        >
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#e03131', letterSpacing: '-0.3px' }}>
+              SO
+            </div>
+            <div style={{ position: 'absolute', bottom: -1, right: -1, width: 14, height: 14, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '0.5px solid #e5e7eb' }}>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <rect width="10" height="10" rx="2" fill="#e03131" />
+                <path d="M2 5h6M5 2v6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </div>
+          </div>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: '#e03131', margin: 0 }}>Sign Out</p>
+            <p style={{ fontSize: 11, color: '#f9a8a8', margin: '1px 0 0' }}>End your session</p>
+          </div>
+        </button>
+      </div>
+    </motion.div>
+  )
+}
+
+function TopbarIconBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      position: 'relative', width: 30, height: 30, borderRadius: 8,
+      border: '1px solid #e5e7eb', background: '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#374151', cursor: 'pointer',
+    }}>
+      {children}
+    </button>
   )
 }
 
@@ -339,9 +417,11 @@ export default function Topbar() {
   const router = useRouter()
   const { jobs } = useJobsContext()
   const { candidates } = useCandidates()
+  const { applications } = useAllApplications(jobs)
 
   const [showNotifications, setShowNotifications] = useState(false)
   const [showUserMenu, setShowUserMenu]           = useState(false)
+  const [showQuickActions, setShowQuickActions]   = useState(false)
   const [searchValue, setSearchValue]             = useState('')
   const [showResults, setShowResults]             = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
@@ -349,7 +429,68 @@ export default function Topbar() {
 
   const displayName     = user?.name ?? 'HR Team'
   const displayInitials = user ? getInitials(user.name) : 'HR'
-  const unreadCount     = notifications.filter(n => n.unread).length
+  const userAvatarColor = avatarColor(displayName)
+
+  const notifications = useMemo<Notification[]>(() => {
+    const notifs: Notification[] = []
+
+    const sorted = [...applications]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 6)
+
+    sorted.forEach(app => {
+      const job = jobs.find(j => j.id === app.job_id)
+      const candidate = candidates.find(c => c.id === app.candidate_id)
+      const name = candidate?.name ?? 'A candidate'
+      const col = avatarColor(name)
+      const today = isToday(app.created_at)
+
+      if (app.current_stage === 'interview') {
+        notifs.push({
+          id: `interview-${app.id}`, type: 'interview', actor: name,
+          actorInitials: getInitials(name), actorColor: col.bg, actorTextColor: col.text,
+          message: 'moved to interview stage for', bold: app.job_title ?? job?.title ?? 'a job',
+          time: timeAgo(app.updated_at), date: today ? 'today' : 'earlier', unread: today, href: '/candidates',
+        })
+      } else if (app.current_stage === 'offer') {
+        notifs.push({
+          id: `offer-${app.id}`, type: 'offer', actor: name,
+          actorInitials: getInitials(name), actorColor: col.bg, actorTextColor: col.text,
+          message: 'reached offer stage for', bold: app.job_title ?? job?.title ?? 'a job',
+          time: timeAgo(app.updated_at), date: today ? 'today' : 'earlier', unread: today, href: '/candidates',
+        })
+      } else {
+        notifs.push({
+          id: `app-${app.id}`, type: 'application', actor: name,
+          actorInitials: getInitials(name), actorColor: col.bg, actorTextColor: col.text,
+          message: 'applied for', bold: app.job_title ?? job?.title ?? 'a job',
+          time: timeAgo(app.created_at), date: today ? 'today' : 'earlier', unread: today, href: '/candidates',
+        })
+      }
+    })
+
+    const recentJobs = [...jobs]
+      .filter(j => j.status === 'active')
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 3)
+
+    recentJobs.forEach(job => {
+      const today = isToday(job.created_at)
+      notifs.push({
+        id: `job-${job.id}`, type: 'job', actor: 'New Job', actorInitials: 'JB',
+        actorColor: '#FAEEDA', actorTextColor: '#854F0B',
+        message: 'posting is now live —', bold: job.title,
+        time: timeAgo(job.created_at), date: today ? 'today' : 'earlier', unread: today, href: `/jobs/${job.id}`,
+      })
+    })
+
+    return notifs.sort((a, b) => {
+      if (a.date === b.date) return 0
+      return a.date === 'today' ? -1 : 1
+    })
+  }, [applications, jobs, candidates])
+
+  const unreadCount = notifications.filter(n => n.unread).length
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -364,9 +505,7 @@ export default function Topbar() {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowResults(false)
-      }
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowResults(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -403,6 +542,12 @@ export default function Topbar() {
     }
   }
 
+  const closeAll = () => {
+    setShowNotifications(false)
+    setShowUserMenu(false)
+    setShowQuickActions(false)
+  }
+
   return (
     <header style={{
       position: 'fixed', top: 0, left: 220, right: 0, height: 67,
@@ -412,18 +557,13 @@ export default function Topbar() {
 
       {/* Team selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
-        <div style={{
-          width: 30, height: 30, borderRadius: 8, background: '#1a1a1a',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0,
-        }}>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
           {displayInitials}
         </div>
         <span style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{displayName}</span>
         <ChevronUp style={{ width: 14, height: 14, color: '#9ca3af' }} />
       </div>
 
-      {/* Divider */}
       <div style={{ width: 1, height: 28, background: '#e5e7eb' }} />
 
       {/* Search */}
@@ -437,14 +577,10 @@ export default function Topbar() {
             onChange={e => { setSearchValue(e.target.value); setShowResults(true) }}
             onFocus={() => { if (searchValue) setShowResults(true) }}
             onKeyDown={handleKeyDown}
-            style={{
-              border: 'none', outline: 'none', background: 'transparent',
-              fontSize: 13, color: '#374151', width: '100%',
-            }}
+            style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#374151', width: '100%' }}
           />
           {searchValue && (
-            <button onClick={() => { setSearchValue(''); setShowResults(false) }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+            <button onClick={() => { setSearchValue(''); setShowResults(false) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
               <X style={{ width: 13, height: 13, color: '#9ca3af' }} />
             </button>
           )}
@@ -455,16 +591,10 @@ export default function Topbar() {
             <motion.div
               initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 6 }} transition={{ duration: 0.12 }}
-              style={{
-                position: 'absolute', top: '100%', left: -30, right: 0, marginTop: 12,
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.08)', overflow: 'hidden', zIndex: 50,
-              }}
+              style={{ position: 'absolute', top: '100%', left: -30, right: 0, marginTop: 12, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.08)', overflow: 'hidden', zIndex: 50 }}
             >
               {!hasResults ? (
-                <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 13, color: '#9ca3af' }}>
-                  No results for "{searchValue}"
-                </div>
+                <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 13, color: '#9ca3af' }}>No results for "{searchValue}"</div>
               ) : (
                 <>
                   {matchedJobs.length > 0 && (
@@ -484,11 +614,7 @@ export default function Topbar() {
                             <p style={{ fontSize: 13, color: '#111', fontWeight: 500, margin: 0 }}>{job.title}</p>
                             <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0' }}>{[job.department, job.location].filter(Boolean).join(' · ')}</p>
                           </div>
-                          <span style={{
-                            fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500,
-                            background: job.status === 'active' ? '#dcfce7' : '#f3f4f6',
-                            color: job.status === 'active' ? '#15803d' : '#6b7280',
-                          }}>{job.status}</span>
+                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500, background: job.status === 'active' ? '#dcfce7' : '#f3f4f6', color: job.status === 'active' ? '#15803d' : '#6b7280' }}>{job.status}</span>
                         </Link>
                       ))}
                     </div>
@@ -509,11 +635,7 @@ export default function Topbar() {
                           onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = '#f9fafb'}
                           onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'}
                         >
-                          <div style={{
-                            width: 26, height: 26, borderRadius: 7, background: '#1a1a1a',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            color: '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0,
-                          }}>
+                          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
                             {getInitials(c.name)}
                           </div>
                           <div>
@@ -538,106 +660,50 @@ export default function Topbar() {
       {/* Right icons */}
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
 
-        {/* Plus */}
-        <TopbarIconBtn><Plus style={{ width: 15, height: 15 }} /></TopbarIconBtn>
-
-        {/* Notifications */}
         <div style={{ position: 'relative' }}>
-          <TopbarIconBtn onClick={() => { setShowNotifications(!showNotifications); setShowUserMenu(false) }}>
-            <Bell style={{ width: 15, height: 15 }} />
-            {unreadCount > 0 && (
-              <span style={{
-                position: 'absolute', top: 6, right: 6, width: 6, height: 6,
-                borderRadius: '50%', background: '#ef4444', border: '2px solid #fff',
-              }} />
-            )}
+          <TopbarIconBtn onClick={() => { setShowQuickActions(!showQuickActions); setShowNotifications(false); setShowUserMenu(false) }}>
+            <Plus style={{ width: 15, height: 15 }} />
           </TopbarIconBtn>
           <AnimatePresence>
-            {showNotifications && (
-              <NotificationsPanel onClose={() => setShowNotifications(false)} />
-            )}
+            {showQuickActions && <QuickActionsPanel onClose={() => setShowQuickActions(false)} />}
           </AnimatePresence>
         </div>
 
-        {/* User avatar */}
         <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => { setShowUserMenu(!showUserMenu); setShowNotifications(false) }}
-            style={{
-              width: 30, height: 30, borderRadius: '50%', background: '#1a1a1a',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', border: 'none',
-            }}
-          >
-            {displayInitials}
-          </button>
+          <TopbarIconBtn onClick={() => { setShowNotifications(!showNotifications); setShowUserMenu(false); setShowQuickActions(false) }}>
+            <Bell style={{ width: 15, height: 15 }} />
+            {unreadCount > 0 && (
+              <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#ef4444', border: '2px solid #fff' }} />
+            )}
+          </TopbarIconBtn>
+          <AnimatePresence>
+            {showNotifications && <NotificationsPanel notifications={notifications} onClose={() => setShowNotifications(false)} />}
+          </AnimatePresence>
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <TopbarIconBtn onClick={() => { setShowUserMenu(!showUserMenu); setShowNotifications(false); setShowQuickActions(false) }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', background: userAvatarColor.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: userAvatarColor.text, letterSpacing: '-0.2px' }}>
+              {displayInitials}
+            </div>
+          </TopbarIconBtn>
           <AnimatePresence>
             {showUserMenu && (
-              <motion.div
-                initial={{ opacity: 0, y: 6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.97 }} transition={{ duration: 0.12 }}
-                style={{
-                  position: 'absolute', right: 0, top: '100%', marginTop: 8,
-                  width: 200, background: '#fff', border: '1px solid #e5e7eb',
-                  borderRadius: 14, boxShadow: '0 8px 24px rgba(0,0,0,0.08)', overflow: 'hidden', zIndex: 50,
-                }}
-              >
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6' }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: '#111', margin: 0 }}>{displayName}</p>
-                  <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email ?? ''}</p>
-                </div>
-                <Link href="/profile" onClick={() => setShowUserMenu(false)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, color: '#374151', textDecoration: 'none' }}
-                  onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.background = '#f9fafb'}
-                  onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'}
-                >
-                  <User style={{ width: 13, height: 13 }} /> Profile
-                </Link>
-                <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#f9fafb'}
-                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
-                >
-                  <CreditCard style={{ width: 13, height: 13 }} /> Billing
-                </button>
-                <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#f9fafb'}
-                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
-                >
-                  <HelpCircle style={{ width: 13, height: 13 }} /> Help &amp; Support
-                </button>
-                <div style={{ borderTop: '1px solid #f3f4f6' }}>
-                  <button
-                    onClick={() => { setShowUserMenu(false); logout() }}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#fef2f2'}
-                    onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
-                  >
-                    <LogOut style={{ width: 13, height: 13 }} /> Sign Out
-                  </button>
-                </div>
-              </motion.div>
+              <UserMenuPanel
+                displayName={displayName}
+                email={user?.email ?? ''}
+                displayInitials={displayInitials}
+                onClose={() => setShowUserMenu(false)}
+                onLogout={() => { setShowUserMenu(false); logout() }}
+              />
             )}
           </AnimatePresence>
         </div>
       </div>
 
-      {(showNotifications || showUserMenu) && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: -1 }}
-          onClick={() => { setShowNotifications(false); setShowUserMenu(false) }} />
+      {(showNotifications || showUserMenu || showQuickActions) && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: -1 }} onClick={closeAll} />
       )}
     </header>
-  )
-}
-
-function TopbarIconBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
-  return (
-    <button onClick={onClick} style={{
-      position: 'relative', width: 30, height: 30, borderRadius: 8,
-      border: '1px solid #e5e7eb', background: '#fff',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#374151', cursor: 'pointer',
-    }}>
-      {children}
-    </button>
   )
 }

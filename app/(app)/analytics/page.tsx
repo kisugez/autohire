@@ -88,10 +88,11 @@ export default function AnalyticsPage() {
     .sort((a, b) => b.value - a.value)
   const sourceTotal = sourceEntries.reduce((s, e) => s + e.value, 0)
 
-  const timelineData = timeline.map(t => ({
-    date:  t.date.slice(5),
-    count: t.count,
-  }))
+  const STAGE_KEYS = ['sourced', 'screening', 'interview', 'offer', 'hired', 'rejected']
+  const timelineData = timeline.map(t => {
+    const count = STAGE_KEYS.reduce((sum, k) => sum + ((t as any)[k] ?? 0), 0)
+    return { date: (t.date ?? '').slice(5), count }
+  })
 
   if (error) return (
     <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl max-w-lg">
@@ -284,7 +285,7 @@ export default function AnalyticsPage() {
             </div>
             {!loading && timelineData.length > 0 && (
               <span className="text-xs text-indigo-600 font-semibold bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-lg">
-                {timelineData.reduce((s, d) => s + d.count, 0)} total
+                {timelineData.reduce((s, d) => s + (d.count || 0), 0) || totalApps} total
               </span>
             )}
           </div>
@@ -295,7 +296,7 @@ export default function AnalyticsPage() {
               <AreaChart data={timelineData} margin={{ left: -20, right: 4 }}>
                 <defs>
                   <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"   stopColor="#6366F1" stopOpacity={0.18} />
+                    <stop offset="0%"   stopColor="#6366F1" stopOpacity={0.22} />
                     <stop offset="100%" stopColor="#6366F1" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
@@ -303,7 +304,7 @@ export default function AnalyticsPage() {
                 <XAxis dataKey="date" tick={{ fill: '#9CA3AF', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#9CA3AF', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="count" stroke="#6366F1" strokeWidth={2} fill="url(#areaGrad)" dot={false} activeDot={{ r: 4, fill: '#6366F1' }} />
+                <Area type="natural" dataKey="count" stroke="#6366F1" strokeWidth={2.5} fill="url(#areaGrad)" dot={false} activeDot={{ r: 4, fill: '#6366F1' }} />
               </AreaChart>
             </ResponsiveContainer>
           )}

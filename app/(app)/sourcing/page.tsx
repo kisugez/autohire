@@ -12,6 +12,9 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ParsedQuery, SourcingCandidate, SourcingRun } from '@/lib/sourcing-api'
+import { sourcingApi } from '@/lib/sourcing-api'
+import { useJobs } from '@/lib/jobs-context'
+import type { ApiJob } from '@/types/job'
 import { useAuth } from '@/lib/auth-context'
 
 type PageState  = 'idle' | 'searching' | 'results'
@@ -37,6 +40,31 @@ const CRITERIA_DISPLAY = [
 ] as const
 
 const PAGE_SIZE = 15
+
+// ─── Search History ──────────────────────────────────────────────────────────
+const HISTORY_KEY = 'sourcing_history'
+const MAX_HISTORY = 10
+
+interface HistoryEntry {
+  id: string
+  query: string
+  parsed: ParsedQuery | null
+  results: SourcingCandidate[]
+  run: SourcingRun | null
+  timestamp: string
+}
+
+function loadHistory(): HistoryEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+  } catch { return [] }
+}
+
+function saveHistory(entries: HistoryEntry[]) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, MAX_HISTORY)))
+  } catch {}
+}
 
 // ─── Demo Data ────────────────────────────────────────────────────────────────
 const DEMO_CANDIDATES: SourcingCandidate[] = [
@@ -377,279 +405,479 @@ function Avatar({ name, photoUrl, size = 36 }: { name: string; photoUrl?: string
   )
 }
 
+
+// ─── ShortlistButton ──────────────────────────────────────────────────────────
+type ShortlistState = 'idle' | 'loading' | 'done' | 'error'
+
+function ShortlistButton({
+  id, state, onShortlist, full = false, compact = false,
+}: {
+  id: string
+  state: ShortlistState
+  onShortlist: (id: string) => void
+  full?: boolean
+  compact?: boolean
+}) {
+  const done  = state === 'done'
+  const loading = state === 'loading'
+
+  if (compact) {
+    return (
+      <button
+        onClick={() => !done && !loading && onShortlist(id)}
+        disabled={loading}
+        className={cn(
+          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium whitespace-nowrap transition-colors',
+          done
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 cursor-default'
+            : 'border-neutral-200 text-neutral-700 hover:bg-neutral-50',
+        )}
+      >
+        {loading ? <Loader2 size={10} className="animate-spin" /> : done ? <Check size={10} /> : <BookMarked size={10} />}
+        {done ? 'Shortlisted' : 'Shortlist'}
+      </button>
+    )
+  }
+
+  if (full) {
+    return (
+      <div className="inline-flex items-stretch rounded-lg border border-neutral-200 overflow-hidden text-[12px] font-medium text-neutral-700 flex-1">
+        <button
+          onClick={() => !done && !loading && onShortlist(id)}
+          disabled={loading}
+          className={cn(
+            'flex items-center justify-center gap-1.5 flex-1 px-3 py-2 transition-colors',
+            done ? 'bg-emerald-50 text-emerald-700 cursor-default' : 'hover:bg-neutral-50',
+          )}
+        >
+          {loading ? <Loader2 size={12} className="animate-spin" /> : done ? <Check size={12} /> : <BookMarked size={12} />}
+          {done ? 'Shortlisted' : 'Add to Shortlist'}
+        </button>
+        {!done && (
+          <button
+            onClick={() => !done && !loading && onShortlist(id)}
+            className="flex items-center px-2 py-2 border-l border-neutral-200 hover:bg-neutral-50 transition-colors"
+          >
+            <ChevronDown size={11} />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // default (card row)
+  return (
+    <div className="inline-flex items-stretch rounded-lg border border-neutral-200 overflow-hidden text-[12px] font-medium text-neutral-700 hover:border-neutral-300 transition-colors">
+      <button
+        onClick={() => !done && !loading && onShortlist(id)}
+        disabled={loading}
+        className={cn(
+          'flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 transition-colors whitespace-nowrap',
+          done ? 'bg-emerald-50 text-emerald-700 cursor-default' : 'hover:bg-neutral-50',
+        )}
+      >
+        {loading ? <Loader2 size={12} className="animate-spin" /> : done ? <Check size={12} /> : <BookMarked size={12} />}
+        {done ? 'Shortlisted' : 'Shortlist'}
+      </button>
+      {!done && (
+        <button
+          onClick={() => !done && !loading && onShortlist(id)}
+          className="flex items-center px-2 py-1.5 border-l border-neutral-200 hover:bg-neutral-50 transition-colors"
+        >
+          <ChevronDown size={11} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── ShortlistModal ───────────────────────────────────────────────────────────
+function ShortlistModal({
+  candidateNames,
+  jobs,
+  onConfirm,
+  onClose,
+}: {
+  candidateNames: string[]
+  jobs: ApiJob[]
+  onConfirm: (jobId: string) => Promise<void>
+  onClose: () => void
+}) {
+  const [selectedJobId, setSelectedJobId] = useState<string>('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const activeJobs = jobs.filter(j => (j.status as string) === 'open' || (j.status as string) === 'active' || !j.status)
+
+  const handleConfirm = async () => {
+    if (!selectedJobId) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onConfirm(selectedJobId)
+      onClose()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Something went wrong')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+
+      {/* Dialog */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className="relative bg-white rounded-2xl border border-neutral-200 shadow-xl w-full max-w-md mx-4 overflow-hidden"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between p-5 border-b border-neutral-100">
+          <div>
+            <h2 className="text-[14px] font-semibold text-neutral-900">Add to Shortlist</h2>
+            <p className="text-[12px] text-neutral-500 mt-0.5">
+              {candidateNames.length === 1
+                ? `Shortlisting ${candidateNames[0]}`
+                : `Shortlisting ${candidateNames.length} candidates`}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 transition-colors mt-0.5">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-3">
+          <p className="text-[12px] font-medium text-neutral-700">Select a role to shortlist against</p>
+          {activeJobs.length === 0 ? (
+            <p className="text-[12px] text-neutral-400">No open jobs found. Create a job first.</p>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {activeJobs.map(job => (
+                <button
+                  key={job.id}
+                  onClick={() => setSelectedJobId(job.id)}
+                  className={cn(
+                    'w-full text-left px-3.5 py-3 rounded-xl border text-[13px] transition-all',
+                    selectedJobId === job.id
+                      ? 'border-violet-400 bg-violet-50 text-violet-900'
+                      : 'border-neutral-200 text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50',
+                  )}
+                >
+                  <p className="font-medium leading-snug">{job.title}</p>
+                  {job.location && (
+                    <p className="text-[11px] text-neutral-400 mt-0.5 flex items-center gap-1">
+                      <MapPin size={9} />
+                      {job.location}
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {error && <p className="text-[12px] text-red-500">{error}</p>}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2.5 px-5 py-4 border-t border-neutral-100">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-neutral-200 text-[12px] font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!selectedJobId || saving || activeJobs.length === 0}
+            className={cn(
+              'px-4 py-2 rounded-lg text-[12px] font-medium transition-colors inline-flex items-center gap-1.5',
+              selectedJobId && !saving
+                ? 'bg-violet-600 text-white hover:bg-violet-700'
+                : 'bg-violet-100 text-violet-300 cursor-not-allowed',
+            )}
+          >
+            {saving && <Loader2 size={11} className="animate-spin" />}
+            {saving ? 'Shortlisting…' : 'Confirm Shortlist'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+
+// ─── Parse helpers: bridge structured demo data ↔ real scraper data ──────────
+
+/** Prefer raw_profile.experiences (structured); fall back to experience_raw (string[]) from scraper */
+function parseExperiences(result: SourcingCandidate): { title: string; company: string; date?: string }[] {
+  const rp = result.candidate.raw_profile
+  if (rp?.experiences && rp.experiences.length > 0) return rp.experiences
+  if (rp?.experience_raw && (rp.experience_raw as string[]).length > 0) {
+    return (rp.experience_raw as string[]).map((line: string) => {
+      const atMatch = line.match(/^(.+?)\s*[@at]\s*(.+?)(?:\s*[·•]\s*(.+))?$/)
+      if (atMatch) return { title: atMatch[1].trim(), company: atMatch[2].trim(), date: atMatch[3]?.trim() }
+      return { title: line, company: '' }
+    })
+  }
+  if (result.candidate.title || result.candidate.company) {
+    return [{
+      title: result.candidate.title ?? 'Unknown Role',
+      company: result.candidate.company ?? '',
+      date: result.candidate.experience != null ? `${result.candidate.experience} yrs exp` : undefined,
+    }]
+  }
+  return []
+}
+
+/** Prefer raw_profile.educations (structured); fall back to education_raw (string[]) from scraper */
+function parseEducations(result: SourcingCandidate): { degree: string; school: string; date?: string }[] {
+  const rp = result.candidate.raw_profile
+  if (rp?.educations && rp.educations.length > 0) return rp.educations
+  if (rp?.education_raw && (rp.education_raw as string[]).length > 0) {
+    return (rp.education_raw as string[]).map((line: string) => {
+      const commaIdx = line.lastIndexOf(',')
+      if (commaIdx !== -1) return { degree: line.slice(0, commaIdx).trim(), school: line.slice(commaIdx + 1).trim() }
+      return { degree: line, school: '' }
+    })
+  }
+  return []
+}
+
+/** Prefer raw_profile.skill_sections (structured); fall back to top-level candidate.skills (flat[]) */
+function parseSkillSections(result: SourcingCandidate): { label: string; skills: string[] }[] {
+  const rp = result.candidate.raw_profile
+  if (rp?.skill_sections && rp.skill_sections.length > 0) return rp.skill_sections
+  const flat = result.candidate.skills ?? []
+  if (flat.length > 0) return [{ label: 'Skills', skills: flat }]
+  return []
+}
+
+// ─── Company Logo Avatar ──────────────────────────────────────────────────────
+function CompanyLogo({ company, logoUrl, size = 36 }: { company: string; logoUrl?: string; size?: number }) {
+  const [failed, setFailed] = useState(false)
+  const letter = (company ?? '?').charAt(0).toUpperCase()
+  if (logoUrl && !failed) {
+    return (
+      <img src={logoUrl} alt={company} onError={() => setFailed(true)}
+        className="rounded-lg object-contain bg-white border border-neutral-100 flex-shrink-0"
+        style={{ width: size, height: size }} />
+    )
+  }
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-neutral-100 flex items-center justify-center font-semibold text-neutral-500 flex-shrink-0 text-[11px]"
+      style={{ width: size, height: size }}>
+      {letter}
+    </div>
+  )
+}
+
 // ─── Candidate Detail Panel ───────────────────────────────────────────────────
 function CandidatePanel({
-  result,
-  onClose,
+  result, onClose, onShortlist, shortlistState,
 }: {
   result: SourcingCandidate
   onClose: () => void
+  onShortlist: (id: string) => void
+  shortlistState: Record<string, 'idle' | 'loading' | 'done' | 'error'>
 }) {
-  const [panelTab, setPanelTab] = useState<PanelTab>('overview')
   const c = result.candidate
   const photo = c.raw_profile?.photo_url
-  const experiences = c.raw_profile?.experiences ?? []
-  const educations = c.raw_profile?.educations ?? []
-  const skillSections = c.raw_profile?.skill_sections ?? []
+  const experiences   = parseExperiences(result)
+  const educations    = parseEducations(result)
+  const skillSections = parseSkillSections(result)
   const tags = c.raw_profile?.tags ?? []
+  const companyLogo = typeof c.raw_profile?.company_logo === 'string' ? c.raw_profile.company_logo : undefined
   const color = avatarColor(c.name)
 
-  // Derived tenure stats
-  const avgTenure = experiences.length > 0 ? '2 yrs 3 mos' : '—'
-  const currentTenure = experiences[0]?.date?.split('·')[1]?.trim() ?? '—'
-  const totalExp = c.experience != null ? `${c.experience} yrs` : '—'
+  // Tenure helpers
+  function parseTenureMonths(dateStr?: string): number {
+    if (!dateStr) return 0
+    const y = dateStr.match(/(\d+)\s*yr/); const mo = dateStr.match(/(\d+)\s*mo/)
+    return (y ? parseInt(y[1]) * 12 : 0) + (mo ? parseInt(mo[1]) : 0)
+  }
+  function fmtMonths(m: number) {
+    if (!m) return '—'
+    const y = Math.floor(m / 12), mo = m % 12
+    return [y ? `${y} yr${y > 1 ? 's' : ''}` : '', mo ? `${mo} mo` : ''].filter(Boolean).join(' ')
+  }
+  const tenures = experiences.map(e => parseTenureMonths(e.date?.split('·')[1]))
+  const nonZeroTenures = tenures.filter(t => t > 0)
+  const avgTenure = fmtMonths(nonZeroTenures.length ? Math.round(nonZeroTenures.reduce((a,b)=>a+b,0)/nonZeroTenures.length) : 0)
+  const currentTenure = fmtMonths(tenures[0] ?? 0)
+  // total: prefer candidate.experience, then raw_profile.experience_years, then sum of durations
+  const rawExpYears = typeof c.raw_profile?.experience_years === 'number' ? c.raw_profile.experience_years : null
+  const totalExpNum = c.experience ?? rawExpYears ?? (nonZeroTenures.length ? Math.round(nonZeroTenures.reduce((a,b)=>a+b,0)/12) : null)
+  const totalExp = totalExpNum != null ? `${totalExpNum} yrs` : '—'
 
   return (
     <motion.div
-      initial={{ x: 40, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: 40, opacity: 0 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="w-[340px] flex-shrink-0 border-l border-neutral-200 bg-white flex flex-col overflow-hidden"
+      initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 40, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }}
+      className="w-[360px] flex-shrink-0 border-l border-neutral-200 bg-white flex flex-col overflow-hidden"
     >
-      {/* Panel header */}
+      {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-neutral-100">
-        <div className="flex items-start justify-between gap-2 mb-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[14px] font-semibold text-neutral-900">{c.name}</span>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2.5">
+            {photo
+              ? <img src={photo} alt={c.name} className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-neutral-100" />
+              : <div className={cn('w-9 h-9 rounded-full flex items-center justify-center font-semibold text-xs flex-shrink-0', color.bg, color.text)}>
+                  {c.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}
+                </div>
+            }
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[13.5px] font-semibold text-neutral-900 leading-tight">{c.name}</span>
+                {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"><LinkedInIcon size={14} /></a>}
+              </div>
+              {(c.title || c.company) && (
+                <p className="text-[11.5px] text-neutral-500 leading-tight truncate">
+                  {c.title}{c.title && c.company ? ' · ' : ''}{c.company}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             {c.linkedin_url && (
-              <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer">
-                <LinkedInIcon size={15} />
+              <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"
+                className="text-[11px] text-violet-600 font-medium hover:text-violet-700 transition-colors whitespace-nowrap">
+                Full Profile
               </a>
             )}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button className="text-[12px] text-violet-600 font-medium hover:text-violet-700 transition-colors">
-              Full Profile
-            </button>
-            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 transition-colors">
-              <X size={14} />
-            </button>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 transition-colors p-0.5"><X size={13} /></button>
           </div>
         </div>
-        {c.location && (
-          <p className="text-[12px] text-neutral-500 flex items-center gap-1">
-            <MapPin size={11} className="text-neutral-400" />
-            {c.location}
-          </p>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {c.location && <span className="flex items-center gap-1 text-[11px] text-neutral-400"><MapPin size={10}/>{c.location}</span>}
+          {tags.map(tag => (
+            <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-medium">
+              <Tag size={8}/>{tag}
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* Panel tabs */}
-      <div className="flex border-b border-neutral-200 px-1">
-        {(['overview', 'experience', 'education', 'skillmap'] as PanelTab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => setPanelTab(t)}
-            className={cn(
-              'px-3 py-2.5 text-[11.5px] font-medium capitalize border-b-2 -mb-px transition-colors',
-              panelTab === t
-                ? 'border-violet-600 text-violet-700'
-                : 'border-transparent text-neutral-500 hover:text-neutral-700'
-            )}
-          >
-            {t === 'skillmap' ? 'Skill Map' : t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
+      {/* Actions */}
+      <div className="px-4 py-2.5 border-b border-neutral-100 flex items-center gap-2">
+        <div className="flex items-center gap-2 text-[11.5px] text-neutral-400 flex-1">
+          <Mail size={11} className="flex-shrink-0"/>
+          <span>No email</span>
+          <span className="text-neutral-200">·</span>
+          <button className="text-violet-600 font-medium hover:text-violet-700 transition-colors">+ Add</button>
+        </div>
+        <ShortlistButton id={result.id} state={shortlistState[result.id] ?? 'idle'} onShortlist={onShortlist} compact />
       </div>
 
-      {/* Panel body */}
+      {/* Single scroll body */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* ── Overview ── */}
-        {panelTab === 'overview' && (
-          <div className="p-4 space-y-4">
-            {/* Email / phone */}
-            <div className="flex items-center gap-2 text-[12px] text-neutral-400">
-              <Mail size={12} className="flex-shrink-0" />
-              <span>No email or phone number</span>
-              <span className="text-neutral-300">·</span>
-              <button className="text-violet-600 hover:text-violet-700 font-medium transition-colors">+ Add Manually</button>
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex items-center gap-2">
-              <div className="inline-flex items-stretch rounded-lg border border-neutral-200 overflow-hidden text-[12px] font-medium text-neutral-700 flex-1">
-                <button className="flex items-center justify-center gap-1.5 flex-1 px-3 py-2 hover:bg-neutral-50 transition-colors">
-                  <BookMarked size={12} />
-                  Add to Shortlist
-                </button>
-                <button className="flex items-center px-2 py-2 border-l border-neutral-200 hover:bg-neutral-50 transition-colors">
-                  <ChevronDown size={11} />
-                </button>
-              </div>
-            </div>
-
-            {/* Tags */}
-            <div>
-              <button className="flex items-center gap-1.5 text-[12px] text-neutral-500 hover:text-neutral-700 transition-colors mb-2">
-                <Plus size={11} />
-                Add Tags
-              </button>
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {tags.map(tag => (
-                    <span key={tag} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-medium">
-                      <Tag size={9} />
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Tenure stats */}
-            <div>
-              <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-2">Experiences</p>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: 'Average Tenure', value: avgTenure },
-                  { label: 'Current Tenure', value: currentTenure },
-                  { label: 'Total Experience', value: totalExp },
-                ].map(s => (
-                  <div key={s.label} className="bg-neutral-50 rounded-lg border border-neutral-100 p-2.5">
-                    <p className="text-[9.5px] text-neutral-400 uppercase tracking-wide leading-tight mb-1">{s.label}</p>
-                    <p className="text-[12.5px] font-semibold text-neutral-800">{s.value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Experience list */}
-            <div className="space-y-3">
-              {experiences.map((exp, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0', color.bg, color.text)}>
-                    {exp.company.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-[12.5px] font-medium text-neutral-900">{exp.title}</p>
-                    <p className="text-[11.5px] text-neutral-600">{exp.company}</p>
-                    <p className="text-[11px] text-neutral-400">{exp.date}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Experience ── */}
-        {panelTab === 'experience' && (
-          <div className="p-4 space-y-4">
-            {/* Tenure stats */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: 'Average Tenure', value: avgTenure },
-                { label: 'Current Tenure', value: currentTenure },
-                { label: 'Total Experience', value: totalExp },
-              ].map(s => (
-                <div key={s.label} className="bg-neutral-50 rounded-lg border border-neutral-100 p-2.5">
-                  <p className="text-[9.5px] text-neutral-400 uppercase tracking-wide leading-tight mb-1">{s.label}</p>
-                  <p className="text-[12.5px] font-semibold text-neutral-800">{s.value}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Experience list */}
-            <div className="space-y-4">
-              {experiences.map((exp, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0', color.bg, color.text)}>
-                    {exp.company.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-[12.5px] font-semibold text-neutral-900">{exp.title}</p>
-                    <p className="text-[12px] text-neutral-600">{exp.company}</p>
-                    <p className="text-[11px] text-neutral-400 mt-0.5">{exp.date}</p>
-                  </div>
-                </div>
-              ))}
-              {experiences.length === 0 && (
-                <p className="text-[12px] text-neutral-400">No experience data available.</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Education ── */}
-        {panelTab === 'education' && (
-          <div className="p-4 space-y-4">
-            {/* Show last exp item for context like screenshot */}
-            {experiences.length > 0 && (
-              <div>
-                <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-2">Latest Role</p>
-                <div className="flex items-start gap-3 pb-4 border-b border-neutral-100">
-                  <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0', color.bg, color.text)}>
-                    {experiences[experiences.length - 1].company.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-[12.5px] font-semibold text-neutral-900">{experiences[experiences.length - 1].title}</p>
-                    <p className="text-[12px] text-neutral-600">{experiences[experiences.length - 1].company}</p>
-                    <p className="text-[11px] text-neutral-400 mt-0.5">{experiences[experiences.length - 1].date}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-3">Education</p>
-              <div className="space-y-4">
-                {educations.map((edu, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0">
-                      <GraduationCap size={14} className="text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-[12.5px] font-semibold text-neutral-900">{edu.school}</p>
-                      <p className="text-[12px] text-neutral-600">{edu.degree}</p>
-                      <p className="text-[11px] text-neutral-400 mt-0.5">{edu.date}</p>
-                    </div>
-                  </div>
-                ))}
-                {educations.length === 0 && (
-                  <p className="text-[12px] text-neutral-400">No education data available.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Skill Map ── */}
-        {panelTab === 'skillmap' && (
-          <div className="p-4 space-y-4">
-            {skillSections.map((section, i) => (
-              <div key={i}>
-                <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-2">{section.label}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {section.skills.map(skill => (
-                    <span
-                      key={skill}
-                      className="px-2.5 py-1 rounded-lg border border-neutral-200 bg-neutral-50 text-[11.5px] text-neutral-700"
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                </div>
+        {/* Tenure stats */}
+        <div className="px-4 pt-4 pb-3">
+          <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-2">Experience</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: 'AVG TENURE',  value: avgTenure },
+              { label: 'CURRENT',     value: currentTenure },
+              { label: 'TOTAL EXP',   value: totalExp },
+            ].map(s => (
+              <div key={s.label} className="bg-neutral-50 rounded-xl border border-neutral-100 p-2.5">
+                <p className="text-[8.5px] text-neutral-400 uppercase tracking-wide leading-tight mb-1">{s.label}</p>
+                <p className="text-[12px] font-semibold text-neutral-800">{s.value}</p>
               </div>
             ))}
-            {skillSections.length === 0 && (
-              <p className="text-[12px] text-neutral-400">No skill data available.</p>
-            )}
+          </div>
+        </div>
+
+        {/* Experience list — LinkedIn style with logo + connecting line */}
+        {experiences.length > 0 && (
+          <div className="px-4 pb-2">
+            {experiences.map((exp, i) => {
+              const expSkills: string[] = (exp as any).skills ?? []
+              return (
+                <div key={i} className="flex gap-3 pb-4">
+                  <div className="flex flex-col items-center">
+                    <CompanyLogo company={exp.company} logoUrl={i === 0 ? companyLogo : undefined} size={34} />
+                    {i < experiences.length - 1 && <div className="w-px flex-1 mt-1.5 bg-neutral-200" style={{minHeight:16}} />}
+                  </div>
+                  <div className="flex-1 min-w-0 pt-0.5">
+                    <p className="text-[12.5px] font-semibold text-neutral-900 leading-snug">{exp.title}</p>
+                    <p className="text-[12px] text-neutral-600 leading-snug">{exp.company}</p>
+                    {exp.date && <p className="text-[11px] text-neutral-400 mt-0.5">{exp.date}</p>}
+                    {expSkills.length > 0 && (
+                      <p className="text-[11px] text-neutral-500 mt-1.5 leading-relaxed">
+                        <span className="font-medium">Skills:</span> {expSkills.join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="mx-4 border-t border-neutral-100 my-1" />
+
+        {/* Education */}
+        <div className="px-4 pt-3 pb-4">
+          <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-3">Education</p>
+          {educations.length > 0 ? (
+            <div className="space-y-4">
+              {educations.map((edu, i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="w-[34px] h-[34px] rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0">
+                    <GraduationCap size={15} className="text-blue-500" />
+                  </div>
+                  <div className="flex-1 min-w-0 pt-0.5">
+                    <p className="text-[12.5px] font-semibold text-neutral-900 leading-snug">{edu.school}</p>
+                    <p className="text-[12px] text-neutral-600 leading-snug">{edu.degree}</p>
+                    {edu.date && <p className="text-[11px] text-neutral-400 mt-0.5">{edu.date}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[12px] text-neutral-400">No education data.</p>
+          )}
+        </div>
+
+        <div className="mx-4 border-t border-neutral-100 my-1" />
+
+        {/* Skill Map */}
+        {skillSections.length > 0 && (
+          <div className="px-4 pt-3 pb-6">
+            <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-3">Skill Map</p>
+            <div className="space-y-3">
+              {skillSections.map((section, i) => (
+                <div key={i} className="border border-neutral-200 rounded-xl p-3">
+                  <p className="text-[10.5px] font-semibold text-neutral-500 mb-2">{section.label}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {section.skills.map(skill => (
+                      <span key={skill} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-violet-100 bg-violet-50 text-[11px] text-violet-700 font-medium">
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" className="opacity-60"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Panel footer */}
-      <div className="px-4 py-3 border-t border-neutral-100 flex items-center gap-2">
-        <div className="inline-flex items-stretch rounded-lg border border-neutral-200 overflow-hidden text-[12px] font-medium text-neutral-700 flex-1">
-          <button className="flex items-center justify-center gap-1.5 flex-1 px-3 py-2 hover:bg-neutral-50 transition-colors">
-            <BookMarked size={12} />
-            Add to Shortlist
-          </button>
-          <button className="flex items-center px-2 py-2 border-l border-neutral-200 hover:bg-neutral-50 transition-colors">
-            <ChevronDown size={11} />
-          </button>
-        </div>
+      {/* Footer */}
+      <div className="px-4 py-3 border-t border-neutral-100">
+        <ShortlistButton id={result.id} state={shortlistState[result.id] ?? 'idle'} onShortlist={onShortlist} full />
       </div>
     </motion.div>
   )
@@ -657,9 +885,11 @@ function CandidatePanel({
 
 // ─── Card Row ─────────────────────────────────────────────────────────────────
 function CandidateCardRow({
-  result, selected, onSelect, isActive, onClick,
+  result, selected, onSelect, isActive, onClick, onShortlist, shortlistState,
 }: {
   result: SourcingCandidate; selected: boolean; onSelect: (id: string) => void; isActive: boolean; onClick: () => void
+  onShortlist: (id: string) => void
+  shortlistState: Record<string, 'idle' | 'loading' | 'done' | 'error'>
 }) {
   const c         = result.candidate
   const photo     = c.raw_profile?.photo_url
@@ -773,15 +1003,7 @@ function CandidateCardRow({
         <button className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-neutral-600 transition-colors">
           <Eye size={14} />
         </button>
-        <div className="inline-flex items-stretch rounded-lg border border-neutral-200 overflow-hidden text-[12px] font-medium text-neutral-700 hover:border-neutral-300 transition-colors">
-          <button className="flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 hover:bg-neutral-50 transition-colors whitespace-nowrap">
-            <BookMarked size={12} />
-            Shortlist
-          </button>
-          <button className="flex items-center px-2 py-1.5 border-l border-neutral-200 hover:bg-neutral-50 transition-colors">
-            <ChevronDown size={11} />
-          </button>
-        </div>
+        <ShortlistButton id={result.id} state={shortlistState[result.id] ?? 'idle'} onShortlist={onShortlist} />
       </div>
     </motion.div>
   )
@@ -789,14 +1011,16 @@ function CandidateCardRow({
 
 // ─── List Row ─────────────────────────────────────────────────────────────────
 function CandidateListRow({
-  result, selected, onSelect, isActive, onClick,
+  result, selected, onSelect, isActive, onClick, onShortlist, shortlistState,
 }: {
   result: SourcingCandidate; selected: boolean; onSelect: (id: string) => void; isActive: boolean; onClick: () => void
+  onShortlist: (id: string) => void
+  shortlistState: Record<string, 'idle' | 'loading' | 'done' | 'error'>
 }) {
   const c        = result.candidate
   const photo    = c.raw_profile?.photo_url
-  const hasExp   = c.experience != null
-  const hasSkills = (c.skills ?? []).length > 0
+  const rawExpYears = typeof c.raw_profile?.experience_years === 'number' ? c.raw_profile.experience_years : null
+  const expNum   = c.experience ?? rawExpYears
 
   return (
     <tr
@@ -807,68 +1031,59 @@ function CandidateListRow({
         isActive && 'bg-violet-50/40'
       )}
     >
-      <td className="pl-5 pr-3 py-3" onClick={e => { e.stopPropagation(); onSelect(result.id) }}>
+      {/* checkbox */}
+      <td className="pl-3 pr-1 py-2.5" onClick={e => { e.stopPropagation(); onSelect(result.id) }}>
         <SquareCheckbox checked={selected} onChange={() => onSelect(result.id)} />
       </td>
-      <td className="px-3 py-3 whitespace-nowrap">
-        <div className="flex items-center gap-2.5">
-          <Avatar name={c.name} photoUrl={photo} size={26} />
-          <span className="text-[12.5px] font-medium text-neutral-900">{c.name}</span>
+
+      {/* name + avatar */}
+      <td className="px-2 py-2.5 overflow-hidden">
+        <div className="flex items-center gap-2 min-w-0">
+          <Avatar name={c.name} photoUrl={photo} size={22} />
+          <span className="text-[11.5px] font-medium text-neutral-900 truncate">{c.name}</span>
         </div>
       </td>
-      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-1.5">
-          {c.linkedin_url && (
-            <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer">
-              <LinkedInIcon size={16} />
-            </a>
+
+      {/* links */}
+      <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-1">
+          {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"><LinkedInIcon size={13} /></a>}
+          {c.github_url   && <a href={c.github_url}   target="_blank" rel="noopener noreferrer"><GitHubIcon   size={12} /></a>}
+        </div>
+      </td>
+
+      {/* title */}
+      <td className="px-2 py-2.5 overflow-hidden">
+        <span className="text-[11px] text-neutral-700 truncate block">{c.title ?? '—'}</span>
+      </td>
+
+      {/* company + logo */}
+      <td className="px-2 py-2.5 overflow-hidden">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {typeof c.raw_profile?.company_logo === 'string' && (
+            <img src={c.raw_profile.company_logo} className="w-3.5 h-3.5 rounded-[3px] object-contain flex-shrink-0" alt="" />
           )}
-          {c.github_url && (
-            <a href={c.github_url} target="_blank" rel="noopener noreferrer">
-              <GitHubIcon size={14} />
-            </a>
-          )}
+          <span className="text-[11px] text-neutral-600 truncate">{c.company ?? '—'}</span>
         </div>
       </td>
-      <td className="px-3 py-3 whitespace-nowrap">
-        <span className="text-[12px] text-neutral-700">{c.title ?? '—'}</span>
+
+      {/* shortlist */}
+      <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+        <ShortlistButton id={result.id} state={shortlistState[result.id] ?? 'idle'} onShortlist={onShortlist} compact />
       </td>
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-1.5 max-w-[150px]">
-          <div className="w-4 h-4 rounded-sm bg-neutral-200 flex-shrink-0 overflow-hidden">
-            {typeof c.raw_profile?.company_logo === 'string' && (
-              <img src={c.raw_profile.company_logo} className="w-full h-full object-cover" alt="Company Logo" />
-            )}
-          </div>
-          <span className="text-[12px] text-neutral-600 truncate">{c.company ?? '—'}</span>
-        </div>
-      </td>
-      <td className="px-3 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-        <button className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-neutral-200 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50 whitespace-nowrap transition-colors">
-          <BookMarked size={10} />
-          Shortlist
-        </button>
-      </td>
-      <td className="px-3 py-3 whitespace-nowrap">
-        <span className="text-[12.5px] font-semibold text-neutral-700">
+
+      {/* match score */}
+      <td className="px-2 py-2.5">
+        <span className="text-[11.5px] font-semibold text-neutral-700">
           {result.ai_score != null ? `${result.ai_score}%` : '—'}
         </span>
       </td>
-      <td className="px-3 py-3">
-        <div className={cn(
-          'w-7 h-7 rounded-md flex items-center justify-center transition-colors',
-          hasExp ? 'bg-emerald-50 text-emerald-600' : 'bg-neutral-100 text-neutral-300'
-        )}>
-          <ThumbsUp size={13} strokeWidth={2} />
-        </div>
-      </td>
-      <td className="px-3 py-3 pr-5">
-        <div className={cn(
-          'w-7 h-7 rounded-md flex items-center justify-center transition-colors',
-          hasSkills ? 'bg-emerald-50 text-emerald-600' : 'bg-neutral-100 text-neutral-300'
-        )}>
-          <ThumbsUp size={13} strokeWidth={2} />
-        </div>
+
+      {/* experience */}
+      <td className="px-2 py-2.5 pr-3">
+        <span className="text-[11px] text-neutral-600">
+          {expNum != null ? `${expNum} yr${expNum !== 1 ? 's' : ''}` : '—'}
+        </span>
       </td>
     </tr>
   )
@@ -1002,6 +1217,18 @@ export default function SourcingPage() {
   const [focused, setFocused]             = useState(false)
   const [allSelected, setAllSelected]     = useState(false)
   const [activeCandidate, setActiveCandidate] = useState<SourcingCandidate | null>(null)
+  const [selectedJobId, setSelectedJobId]     = useState<string>('')
+  const [shortlistState, setShortlistState]   = useState<Record<string, 'idle' | 'loading' | 'done' | 'error'>>({})
+  const [shortlistModal, setShortlistModal]   = useState<{ ids: string[]; apiIds: string[]; names: string[] } | null>(null)
+  const [platforms, setPlatforms]             = useState<string[]>(['linkedin', 'github'])
+  const [history, setHistory]                 = useState<HistoryEntry[]>(() => {
+    if (typeof window === 'undefined') return []
+    return loadHistory()
+  })
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const { jobs } = useJobs()
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -1016,7 +1243,39 @@ export default function SourcingPage() {
       'toronto', 'vancouver', 'sydney', 'melbourne', 'singapore', 'tokyo',
       'dubai', 'mumbai', 'bangalore', 'remote',
       'usa', 'us', 'uk', 'europe', 'australia', 'canada', 'germany', 'france',
-      'india', 'asia', 'latam', 'apac',
+      'india', 'asia', 'latam', 'apac', 'algeria', 'angola', 'benin', 'botswana', 'burkina faso', 'burundi',
+      'cabo verde', 'cameroon', 'central african republic', 'chad', 'comoros',
+      'congo', 'democratic republic of the congo', 'djibouti', 'egypt',
+      'equatorial guinea', 'eritrea', 'eswatini', 'ethiopia', 'gabon', 'gambia',
+      'ghana', 'guinea', 'guinea-bissau', 'ivory coast', 'kenya', 'lesotho',
+      'liberia', 'libya', 'madagascar', 'malawi', 'mali', 'mauritania',
+      'mauritius', 'morocco', 'mozambique', 'namibia', 'niger', 'nigeria',
+      'rwanda', 'sao tome and principe', 'senegal', 'seychelles', 'sierra leone',
+      'somalia', 'south africa', 'south sudan', 'sudan', 'tanzania', 'togo',
+      'tunisia', 'uganda', 'zambia', 'zimbabwe','afghanistan', 'armenia', 'azerbaijan', 'bahrain', 'bangladesh', 'bhutan',
+      'brunei', 'cambodia', 'china', 'cyprus', 'georgia', 'indonesia', 'iran',
+      'iraq', 'israel', 'japan', 'jordan', 'kazakhstan', 'kuwait', 'kyrgyzstan',
+      'laos', 'lebanon', 'malaysia', 'maldives', 'mongolia', 'myanmar', 'nepal',
+      'north korea', 'oman', 'pakistan', 'palestine', 'philippines', 'qatar',
+      'saudi arabia', 'south korea', 'sri lanka', 'syria', 'taiwan', 'tajikistan',
+      'thailand', 'timor-leste', 'turkmenistan', 'united arab emirates', 'uae',
+      'uzbekistan', 'vietnam', 'yemen','albania', 'andorra', 'austria', 'belarus', 'belgium', 'bosnia and herzegovina',
+      'bulgaria', 'croatia', 'czech republic', 'denmark', 'estonia', 'finland',
+      'greece', 'hungary', 'iceland', 'ireland', 'italy', 'kosovo', 'latvia',
+      'liechtenstein', 'lithuania', 'luxembourg', 'malta', 'moldova', 'monaco',
+      'montenegro', 'netherlands', 'north macedonia', 'norway', 'poland',
+      'portugal', 'romania', 'russia', 'san marino', 'serbia', 'slovakia',
+      'slovenia', 'spain', 'sweden', 'switzerland', 'ukraine','united kingdom', 'vatican city',
+      'antigua and barbuda', 'bahamas', 'barbados', 'belize', 'costa rica', 'cuba',
+      'dominica', 'dominican republic', 'el salvador', 'grenada', 'guatemala',
+      'haiti', 'honduras', 'jamaica', 'mexico', 'nicaragua', 'panama',
+      'saint kitts and nevis', 'saint lucia', 'saint vincent and the grenadines',
+      'trinidad and tobago', 'united states', 'united states of america',
+      'argentina', 'bolivia', 'brazil', 'chile', 'colombia', 'ecuador',
+      'guyana', 'paraguay', 'peru', 'suriname', 'uruguay', 'venezuela',
+      'fiji', 'kiribati', 'marshall islands', 'micronesia', 'nauru', 'new zealand',
+      'palau', 'papua new guinea', 'samoa', 'solomon islands', 'tonga', 'tuvalu',
+      'vanuatu',
     ]
     const foundLocation = LOCATIONS.find(loc => lower.includes(loc))
     const location = foundLocation ? foundLocation.charAt(0).toUpperCase() + foundLocation.slice(1) : undefined
@@ -1075,7 +1334,7 @@ export default function SourcingPage() {
     const skills = SKILLS.filter(s => lower.includes(s))
     if (skills.length > 0) detected.push('skills')
 
-    return { location, job_title, experience_min, industry, skills, detected }
+    return { location: location ?? null, job_title: job_title ?? null, experience_min: experience_min ?? null, industry: industry ?? null, skills, detected }
   }
 
   useEffect(() => {
@@ -1085,23 +1344,30 @@ export default function SourcingPage() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [query])
 
-  const filterCandidates = (p: ParsedQuery | null): SourcingCandidate[] => {
-    if (!p || p.detected.length === 0) return DEMO_CANDIDATES
-    return DEMO_CANDIDATES.filter(r => {
-      const c = r.candidate
-      if (p.experience_min != null) {
-        if ((c.experience ?? 0) < p.experience_min - 2) return false
-      }
-      if (p.skills && p.skills.length > 0) {
-        const cSkills = (c.skills ?? []).map(s => s.toLowerCase())
-        const hasAny = p.skills.some(s => cSkills.some(cs => cs.includes(s) || s.includes(cs)))
-        if (!hasAny) return false
-      }
-      return true
-    })
+  // Restore a search when navigated from sidebar history item
+  useEffect(() => {
+    const id = sessionStorage.getItem('sourcing_restore_id')
+    if (!id) return
+    sessionStorage.removeItem('sourcing_restore_id')
+    const all = loadHistory()
+    const entry = all.find(h => h.id === id)
+    if (entry) restoreHistory(entry)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const restoreHistory = (entry: HistoryEntry) => {
+    setQuery(entry.query)
+    setParsed(entry.parsed)
+    setResults(entry.results)
+    setRun(entry.run)
+    setPage(1)
+    setActiveCandidate(null)
+    setPageState('results')
+    setActiveHistoryId(entry.id)
+    setFocused(false)
   }
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!query.trim()) return
     setError(null)
     setPageState('searching')
@@ -1109,14 +1375,74 @@ export default function SourcingPage() {
     setPage(1)
     setFocused(false)
     setActiveCandidate(null)
+    setActiveHistoryId(null)
+
     const p = parsed ?? parseQueryLocally(query)
     setParsed(p)
-    setRun(DEMO_RUN)
-    setTimeout(() => {
-      const filtered = filterCandidates(p)
-      setResults(filtered.length > 0 ? filtered : DEMO_CANDIDATES)
-      setPageState('results')
-    }, 900)
+
+    const jobId = selectedJobId || jobs?.[0]?.id || ''
+
+    try {
+      const newRun = await sourcingApi.createRun({
+        job_id: jobId,
+        platforms: platforms.filter(p => p !== 'linkedin'),
+        criteria: {
+          keywords:       query,
+          location:       p.location       ?? undefined,
+          title:          p.job_title      ?? undefined,
+          skills:         p.skills.length  > 0 ? p.skills : undefined,
+          experience_min: p.experience_min ?? undefined,
+          industry:       p.industry       ?? undefined,
+          limit:          50,
+        },
+      })
+      setRun(newRun)
+
+      // Poll until completed or failed (max 3 min)
+      let attempts = 0
+      const MAX = 36
+      if (pollRef.current) clearInterval(pollRef.current)
+      pollRef.current = setInterval(async () => {
+        attempts++
+        try {
+          const latest = await sourcingApi.getRun(newRun.id)
+          setRun(latest)
+          if (latest.status === 'completed' || latest.status === 'failed' || attempts >= MAX) {
+            clearInterval(pollRef.current!)
+            pollRef.current = null
+            if (latest.status === 'completed') {
+              const res = await sourcingApi.getResults(newRun.id)
+              setResults(res)
+              // persist to search history
+              const entry: HistoryEntry = {
+                id: newRun.id,
+                query,
+                parsed: p,
+                results: res,
+                run: latest,
+                timestamp: new Date().toISOString(),
+              }
+              setHistory(prev => {
+                const next = [entry, ...prev.filter(h => h.id !== entry.id)].slice(0, MAX_HISTORY)
+                saveHistory(next)
+                return next
+              })
+            } else if (latest.status === 'failed') {
+              setError('Sourcing run failed. Please try again.')
+            }
+            setPageState('results')
+          }
+        } catch {
+          clearInterval(pollRef.current!)
+          pollRef.current = null
+          setPageState('results')
+        }
+      }, 5000)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong'
+      setError(msg)
+      setPageState('idle')
+    }
   }
 
   const toggleSelect = (id: string) =>
@@ -1136,8 +1462,45 @@ export default function SourcingPage() {
     else { setSelected(new Set(paginated.map(r => r.id))); setAllSelected(true) }
   }
 
+  const handleShortlist = (id: string) => {
+    // id is the SourcingResult row UUID (used for UI state keys).
+    // The backend expects the Candidate UUID (candidate_id FK), not the result row id.
+    const result = results.find(r => r.id === id) ?? activeCandidate
+    const name = result?.candidate.name ?? 'Candidate'
+    const apiId = result?.candidate_id ?? result?.candidate?.id ?? id
+    setShortlistModal({ ids: [id], apiIds: [apiId], names: [name] })
+  }
+
+  const handleShortlistConfirm = async (jobId: string) => {
+    if (!shortlistModal) return
+    // ids    = result row UUIDs → UI state keys (ShortlistButton tracks these)
+    // apiIds = candidate UUIDs  → sent to the backend shortlist endpoint
+    const { ids, apiIds } = shortlistModal
+    // mark all as loading
+    setShortlistState(prev => {
+      const next = { ...prev }
+      ids.forEach(id => { next[id] = 'loading' })
+      return next
+    })
+    try {
+      await sourcingApi.shortlist(apiIds, jobId)
+      setShortlistState(prev => {
+        const next = { ...prev }
+        ids.forEach(id => { next[id] = 'done' })
+        return next
+      })
+    } catch (e: unknown) {
+      setShortlistState(prev => {
+        const next = { ...prev }
+        ids.forEach(id => { next[id] = 'error' })
+        return next
+      })
+      throw e
+    }
+  }
+
   // ── IDLE / SEARCHING ────────────────────────────────────────────────────────
-  if (pageState === 'idle' || pageState === 'searching') {
+  if (pageState === 'idle' || (pageState as string) === 'searching') {
     return (
       <div className="min-h-[75vh] flex flex-col items-center" style={{ paddingTop: '12vh' }}>
         <motion.div
@@ -1241,7 +1604,7 @@ export default function SourcingPage() {
                       <motion.button
                         whileTap={{ scale: 0.92 }}
                         onClick={handleSearch}
-                        disabled={!query.trim() || pageState === 'searching'}
+                        disabled={!query.trim() || (pageState as string) === 'searching'}
                         className={cn(
                           'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
                           query.trim() && pageState !== 'searching'
@@ -1249,7 +1612,7 @@ export default function SourcingPage() {
                             : 'bg-violet-100 text-violet-300 cursor-not-allowed'
                         )}
                       >
-                        {pageState === 'searching' ? <Loader2 size={13} className="animate-spin" /> : <ArrowRight size={13} />}
+                        {(pageState as string) === 'searching' ? <Loader2 size={13} className="animate-spin" /> : <ArrowRight size={13} />}
                       </motion.button>
                     </div>
                   </motion.div>
@@ -1276,6 +1639,39 @@ export default function SourcingPage() {
               )}
             </AnimatePresence>
           </div>
+
+          {/* Search history pills */}
+          {history.length > 0 && (
+            <div className="mt-4 w-full">
+              <div className="flex items-center gap-2 mb-2">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span className="text-[11px] font-medium text-neutral-400 uppercase tracking-wide">Recent Searches</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {history.map(entry => (
+                  <button
+                    key={entry.id}
+                    onClick={() => restoreHistory(entry)}
+                    className={cn(
+                      'flex items-center gap-3 w-full text-left px-4 py-2.5 rounded-xl border transition-all group',
+                      activeHistoryId === entry.id
+                        ? 'border-violet-300 bg-violet-50/60'
+                        : 'border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50'
+                    )}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400 flex-shrink-0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <span className="flex-1 text-[12.5px] text-neutral-700 truncate">{entry.query}</span>
+                    <span className="text-[11px] text-neutral-400 flex-shrink-0">
+                      {entry.results.length} match{entry.results.length !== 1 ? 'es' : ''}
+                    </span>
+                    <span className="text-[11px] text-neutral-300 flex-shrink-0">
+                      {new Date(entry.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {error && <p className="text-xs text-red-500 mt-3">{error}</p>}
         </motion.div>
@@ -1372,7 +1768,7 @@ export default function SourcingPage() {
               </button>
             )}
 
-            {pageState === 'searching' && (
+            {(pageState as string) === 'searching' && (
               <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">
                 <Loader2 size={11} className="animate-spin" />
                 Searching…
@@ -1402,7 +1798,7 @@ export default function SourcingPage() {
           {/* Card view */}
           {tab === 'results' && viewMode === 'card' && (
             <div className="bg-white rounded-lg border border-neutral-200 overflow-hidden">
-              {pageState === 'searching' && results.length === 0 && (
+              {(pageState as string) === 'searching' && results.length === 0 && (
                 <div className="divide-y divide-neutral-100">
                   {Array.from({ length: 4 }).map((_, i) => (
                     <div key={i} className="flex items-start gap-4 px-6 py-5 animate-pulse">
@@ -1436,6 +1832,8 @@ export default function SourcingPage() {
                     onSelect={toggleSelect}
                     isActive={activeCandidate?.id === r.id}
                     onClick={() => handleCandidateClick(r)}
+                    onShortlist={handleShortlist}
+                    shortlistState={shortlistState}
                   />
                 ))}
               </AnimatePresence>
@@ -1445,25 +1843,24 @@ export default function SourcingPage() {
           {/* List view */}
           {tab === 'results' && viewMode === 'list' && (
             <div className="bg-white rounded-lg border border-neutral-200 overflow-hidden">
-              {pageState === 'searching' && results.length === 0 ? (
+              {(pageState as string) === 'searching' && results.length === 0 ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 size={20} className="animate-spin text-neutral-400" />
                   <span className="ml-3 text-sm text-neutral-500">Loading candidates…</span>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+                <div className="overflow-x-hidden w-full">
+                  <table className="w-full table-fixed">
                     <thead>
                       <tr className="border-b border-neutral-100 bg-neutral-50/50">
-                        <th className="pl-5 pr-3 py-2.5 w-10" />
-                        <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Name</th>
-                        <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Profiles</th>
-                        <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Job Title</th>
-                        <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Company</th>
-                        <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Shortlist Status</th>
-                        <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Match</th>
-                        <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Experience</th>
-                        <th className="px-3 py-2.5 pr-5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Skills</th>
+                        <th className="pl-3 pr-1 py-2 w-6" />
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[26%]">Name</th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[5%]">Links</th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[22%]">Title</th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[17%]">Company</th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[14%]">Shortlist</th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[8%]">Match</th>
+                        <th className="px-2 py-2 pr-3 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[8%]">Exp</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1476,6 +1873,8 @@ export default function SourcingPage() {
                             onSelect={toggleSelect}
                             isActive={activeCandidate?.id === r.id}
                             onClick={() => handleCandidateClick(r)}
+                            onShortlist={handleShortlist}
+                            shortlistState={shortlistState}
                           />
                         ))}
                       </AnimatePresence>
@@ -1495,7 +1894,7 @@ export default function SourcingPage() {
           {/* Insights tab */}
           {tab === 'insights' && (
             <div className="bg-neutral-50 rounded-lg border border-neutral-200 overflow-hidden mt-3">
-              {pageState === 'searching' && results.length === 0
+              {(pageState as string) === 'searching' && results.length === 0
                 ? <div className="flex items-center justify-center py-16">
                     <Loader2 size={22} className="animate-spin text-neutral-400" />
                     <span className="ml-3 text-sm text-neutral-500">Gathering insights…</span>
@@ -1526,11 +1925,25 @@ export default function SourcingPage() {
             <CandidatePanel
               result={activeCandidate}
               onClose={() => setActiveCandidate(null)}
+              onShortlist={handleShortlist}
+              shortlistState={shortlistState}
             />
           )}
         </AnimatePresence>
 
       </div>
+
+      {/* ── Shortlist Modal ── */}
+      <AnimatePresence>
+        {shortlistModal && (
+          <ShortlistModal
+            candidateNames={shortlistModal.names}
+            jobs={jobs}
+            onConfirm={handleShortlistConfirm}
+            onClose={() => setShortlistModal(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

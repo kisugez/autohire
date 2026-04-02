@@ -94,6 +94,7 @@ export interface ApiApplication {
   ai_reasoning: string | null
   ai_label: string | null
   job_title: string | null
+  source: string | null
   created_at: string
   updated_at: string
 }

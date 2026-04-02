@@ -366,7 +366,7 @@ function CalendarInner() {
   const handleOAuthReturn = useCallback(() => {
     showToast('Google Calendar connected! Loading your events…')
     // Re-fetch status immediately, then fetch events (which may take a moment)
-    fetchStatus().then(() => fetchEvents())
+    fetchEvents()
   }, [fetchStatus, fetchEvents])
 
   const sync = async () => {

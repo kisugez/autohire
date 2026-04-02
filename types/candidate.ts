@@ -79,6 +79,9 @@ export interface ApiCandidate {
   github_url: string | null
   resume_url: string | null
   notes: string | null
+  avatar_url: string | null
+  gender: string | null
+  location_flag: string | null
   created_at: string
   updated_at: string
 }

@@ -13,6 +13,7 @@ interface JobsContextValue {
   createJob: (payload: Partial<ApiJob>) => Promise<ApiJob>
   updateJob: (id: string, payload: Partial<ApiJob>) => Promise<ApiJob>
   archiveJob: (id: string) => Promise<void>
+  deleteJob: (id: string) => Promise<void>
 }
 
 const JobsContext = createContext<JobsContextValue | null>(null)
@@ -57,8 +58,14 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, status: 'closed' as const } : j))
   }, [])
 
+  const deleteJob = useCallback(async (id: string) => {
+    await del(`/api/v1/jobs/${id}`)
+    setJobs(prev => prev.filter(j => j.id !== id))
+    setTotal(prev => prev - 1)
+  }, [])
+
   return (
-    <JobsContext.Provider value={{ jobs, total, loading, error, refresh, createJob, updateJob, archiveJob }}>
+    <JobsContext.Provider value={{ jobs, total, loading, error, refresh, createJob, updateJob, archiveJob, deleteJob }}>
       {children}
     </JobsContext.Provider>
   )
@@ -69,3 +76,5 @@ export function useJobsContext() {
   if (!ctx) throw new Error('useJobsContext must be used inside <JobsProvider>')
   return ctx
 }
+
+export const useJobs = useJobsContext

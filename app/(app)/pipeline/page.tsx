@@ -99,6 +99,7 @@ interface PipelineCard {
   location: string
   skills: string[]
   aiScore: number | null
+  avatarUrl: string | null
   stage: CandidateStage
   jobTitle: string | null
   jobId: string
@@ -159,8 +160,10 @@ function DraggableCard({ card }: { card: PipelineCard }) {
     >
       {/* Header */}
       <div className="flex items-start gap-2 p-2.5 pb-2">
-        <div className="w-7 h-7 rounded-full bg-neutral-900 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ring-2 ring-white">
-          {getInitials(card.name)}
+        <div className="w-7 h-7 rounded-full flex-shrink-0 ring-2 ring-white overflow-hidden bg-neutral-900 flex items-center justify-center">
+          {card.avatarUrl
+            ? <img src={card.avatarUrl} alt={card.name} className="w-full h-full object-cover" />
+            : <span className="text-white text-[10px] font-bold">{getInitials(card.name)}</span>}
         </div>
         <div className="flex-1 min-w-0 pt-px">
           <Link
@@ -268,6 +271,7 @@ export default function PipelinePage() {
           location:      c.location ?? '',
           skills:        Array.isArray(c.skills) ? c.skills : [],
           aiScore:       app.ai_score,
+          avatarUrl:     (c as any).github_avatar_url ?? null,
           stage,
           jobTitle:      (app as any)._jobTitle ?? app.job_title ?? null,
           jobId:         app.job_id,
@@ -429,8 +433,10 @@ export default function PipelinePage() {
             {activeCard && (
               <div className="bg-white border-2 border-indigo-400 rounded-lg p-2.5 shadow-2xl w-[220px] rotate-1 opacity-95 pointer-events-none">
                 <div className="flex items-start gap-2">
-                  <div className="w-7 h-7 rounded-full bg-neutral-900 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-                    {getInitials(activeCard.name)}
+                  <div className="w-7 h-7 rounded-full flex-shrink-0 overflow-hidden bg-neutral-900 flex items-center justify-center">
+                    {activeCard.avatarUrl
+                      ? <img src={activeCard.avatarUrl} alt={activeCard.name} className="w-full h-full object-cover" />
+                      : <span className="text-white text-[10px] font-bold">{getInitials(activeCard.name)}</span>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-neutral-900 text-[11px] font-semibold truncate">{activeCard.name}</p>
