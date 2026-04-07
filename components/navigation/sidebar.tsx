@@ -43,19 +43,6 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
 
-  const [recentSearches, setRecentSearches] = useState<{ id: string; query: string }[]>([])
-  useEffect(() => {
-    const load = () => {
-      try {
-        const raw = JSON.parse(localStorage.getItem('sourcing_history') ?? '[]') as { id: string; query: string }[]
-        setRecentSearches(raw.slice(0, 2))
-      } catch {}
-    }
-    load()
-    const t = setInterval(load, 3000)
-    return () => clearInterval(t)
-  }, [])
-
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard'
     return pathname.startsWith(href)
@@ -99,36 +86,7 @@ export default function Sidebar() {
 
         <SectionLabel>RECRUITMENT</SectionLabel>
         {recruitmentItems.map((item) => (
-          <div key={item.href}>
-            <NavItem item={item} active={isActive(item.href)} />
-            {item.href === '/sourcing' && recentSearches.length > 0 && recentSearches.map((entry) => (
-              <button
-                key={entry.id}
-                onClick={() => {
-                  sessionStorage.setItem('sourcing_restore_id', entry.id)
-                  router.push('/sourcing')
-                }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  width: '100%', padding: '5px 10px 5px 42px',
-                  background: 'transparent', border: 'none', cursor: 'pointer',
-                }}
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
-                  stroke="rgba(255,255,255,0.35)" strokeWidth="2"
-                  strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                <span style={{
-                  color: 'rgba(255,255,255,0.38)', fontSize: '11px', fontWeight: 300,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  maxWidth: '130px', textAlign: 'left',
-                }}>
-                  {entry.query}
-                </span>
-              </button>
-            ))}
-          </div>
+          <NavItem key={item.href} item={item} active={isActive(item.href)} />
         ))}
 
         <SectionLabel>ORGANISATION</SectionLabel>

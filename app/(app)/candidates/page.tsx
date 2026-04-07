@@ -57,7 +57,6 @@ const SCORE_OPTIONS = [
   { label: '70%+ Match', value: '70' },
 ]
 
-/* good_fit badge: blue text on blue bg (not white) */
 const AI_LABEL_COLOR: Record<string, string> = {
   strong_fit: 'bg-green-50 text-green-700 border-green-200',
   good_fit:   'bg-blue-50  text-blue-700  border-blue-200',
@@ -125,7 +124,7 @@ export default function CandidatesPage() {
     setLiked(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
   return (
-    <div className="space-y-4 px-1 pt-2">
+    <div className="space-y-4 px-1 pt-2" style={{ zoom: 0.9 }}>
 
       {/* ── page header ── */}
       <div className="flex items-center justify-between">
@@ -262,7 +261,7 @@ export default function CandidatesPage() {
           </button>
         </div>
 
-        {/* stage tabs — colored active state per stage */}
+        {/* stage tabs */}
         <div className="flex items-center gap-0.5 bg-neutral-100 rounded-lg p-0.5">
           {TABS.map(tab => {
             const active = tab === activeTab

@@ -9,7 +9,7 @@ import {
   Users, ChevronDown, CheckCircle2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { get, post } from '@/lib/api'
+import { get, post, delete as del } from '@/lib/api'
 
 type EventType = 'interview' | 'task' | 'time_off' | 'holiday' | 'meeting' | 'other'
 type FilterType = 'All' | 'Interview' | 'Task' | 'Time Off' | 'Holiday' | 'Meeting'
@@ -325,7 +325,8 @@ function CalendarInner() {
   const [events,setEvents]         = useState<CalendarEvent[]>([])
   const [loading,setLoading]       = useState(true)
   const [syncing,setSyncing]       = useState(false)
-  const [connecting,setConnecting] = useState(false)
+  const [connecting,setConnecting]     = useState(false)
+  const [disconnecting,setDisconnecting] = useState(false)
   const [gcal,setGcal]             = useState<GoogleCalStatus>({ gcal_connected:false })
   const [filter,setFilter]         = useState<FilterType>('All')
   const [activeEvent,setActive]    = useState<CalendarEvent|null>(null)
@@ -388,6 +389,19 @@ function CalendarInner() {
     } catch {
       showToast('Could not start Google Calendar sign-in. Try again.')
       setConnecting(false)
+    }
+  }
+
+  const disconnectGoogle = async () => {
+    setDisconnecting(true)
+    try {
+      await del('/api/v1/google/calendar/disconnect')
+      setGcal({ gcal_connected: false })
+      showToast('Google Calendar disconnected.')
+    } catch {
+      showToast('Failed to disconnect. Please try again.')
+    } finally {
+      setDisconnecting(false)
     }
   }
 
@@ -533,19 +547,29 @@ function CalendarInner() {
           {/* GCal connection card */}
           <div className="border-b border-neutral-200 p-4">
             {gcal.gcal_connected ? (
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-md overflow-hidden border border-neutral-200 flex-shrink-0">
-                  <GCalIcon day={today.getDate()}/>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-semibold text-neutral-900">Google Calendar</p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>
-                    <p className="text-[11px] text-emerald-600 truncate">Connected · {gcal.gmail_email}</p>
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-md overflow-hidden border border-neutral-200 flex-shrink-0">
+                    <GCalIcon day={today.getDate()}/>
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-neutral-900">Google Calendar</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>
+                      <p className="text-[11px] text-emerald-600 truncate">Connected{gcal.gmail_email ? ` · ${gcal.gmail_email}` : ''}</p>
+                    </div>
+                  </div>
+                  <button onClick={sync} disabled={syncing} className="p-1.5 rounded-md hover:bg-neutral-100 text-neutral-400 transition-colors" title="Sync now">
+                    <RefreshCw size={12} className={cn(syncing&&'animate-spin')}/>
+                  </button>
                 </div>
-                <button onClick={sync} disabled={syncing} className="p-1.5 rounded-md hover:bg-neutral-100 text-neutral-400 transition-colors">
-                  <RefreshCw size={12} className={cn(syncing&&'animate-spin')}/>
+                <button
+                  onClick={disconnectGoogle}
+                  disabled={disconnecting}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md border border-red-200 text-red-500 text-[11.5px] font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
+                >
+                  {disconnecting ? <Loader2 size={11} className="animate-spin"/> : <X size={11}/>}
+                  {disconnecting ? 'Disconnecting…' : 'Disconnect Calendar'}
                 </button>
               </div>
             ) : (

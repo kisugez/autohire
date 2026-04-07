@@ -6,6 +6,7 @@ import {
   Search, RefreshCw, Send, Mail, Phone, Briefcase,
   Loader2, AlertCircle, ArrowDown, ArrowUp,
   Calendar, MessageSquare, X, Plus, UserPlus, Archive, Inbox,
+  Sparkles, Check, ChevronDown, FileText,
 } from 'lucide-react'
 import { formatRelativeTime, formatDate, getInitials, cn } from '@/lib/utils'
 import { get, post } from '@/lib/api'
@@ -53,6 +54,14 @@ interface ApiCandidate {
   title?: string
 }
 
+interface OutreachTemplate {
+  id: string
+  name: string
+  subject: string
+  body: string
+  category: string
+}
+
 interface ComposeTarget {
   candidate_id: string
   candidate_name: string
@@ -72,6 +81,17 @@ function getArchivedIds(): Set<string> {
 
 function saveArchivedIds(ids: Set<string>) {
   try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify([...ids])) } catch {}
+}
+
+
+function renderTemplate(text: string, candidateName: string, candidateEmail: string, jobTitle?: string): string {
+  const firstName = candidateName.split(' ')[0]
+  return text
+    .replace(/\{\{candidate_name\}\}/gi, candidateName)
+    .replace(/\{\{first_name\}\}/gi, firstName)
+    .replace(/\{\{candidate_email\}\}/gi, candidateEmail)
+    .replace(/\{\{job_title\}\}/gi, jobTitle ?? '')
+    .replace(/\{\{role\}\}/gi, jobTitle ?? '')
 }
 
 // ─── Config ──────────────────────────────────────────────────────
@@ -192,16 +212,170 @@ function CandidatePickerModal({ open, onClose, onSelect }: {
   )
 }
 
+function TemplatePicker({ templates, loading, selected, onSelect }: {
+  templates: OutreachTemplate[]
+  loading: boolean
+  selected: OutreachTemplate | null
+  onSelect: (t: OutreachTemplate | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white text-[11px] font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+      >
+        <FileText className="w-3 h-3 text-neutral-400" />
+        {selected ? <span className="max-w-[110px] truncate">{selected.name}</span> : 'Templates'}
+        <ChevronDown className="w-3 h-3 text-neutral-400" />
+        {selected && (
+          <span
+            role="button"
+            onClick={e => { e.stopPropagation(); onSelect(null) }}
+            className="ml-0.5 text-neutral-400 hover:text-red-400"
+          ><X className="w-2.5 h-2.5" /></span>
+        )}
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={() => setOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              className="relative bg-white rounded-xl shadow-xl border border-neutral-200 w-[420px] max-h-[520px] flex flex-col z-10"
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-3.5 h-3.5 text-neutral-500" />
+                  <p className="text-neutral-900 text-sm font-semibold">Outreach Templates</p>
+                </div>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5 text-neutral-400" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto py-2">
+                {loading ? (
+                  <div className="flex items-center justify-center gap-2 py-12 text-neutral-400 text-xs">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading templates…
+                  </div>
+                ) : templates.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-neutral-400 text-xs gap-2">
+                    <FileText className="w-7 h-7 text-neutral-200" />
+                    No templates yet
+                  </div>
+                ) : (
+                  templates.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => { onSelect(t); setOpen(false) }}
+                      className={cn(
+                        'w-full text-left px-5 py-3.5 hover:bg-neutral-50 border-b border-neutral-50 transition-colors',
+                        selected?.id === t.id && 'bg-violet-50 hover:bg-violet-50'
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-neutral-800 truncate">{t.name}</p>
+                          <p className="text-xs text-neutral-400 truncate mt-0.5">{t.subject}</p>
+                          <p className="text-[11px] text-neutral-300 line-clamp-2 mt-1 leading-relaxed">{t.body}</p>
+                        </div>
+                        {selected?.id === t.id && (
+                          <Check className="w-3.5 h-3.5 text-violet-500 flex-shrink-0 mt-0.5" />
+                        )}
+                      </div>
+                      <span className={cn(
+                        'inline-block mt-2 text-[10px] font-medium px-2 py-0.5 rounded-full border',
+                        t.category === 'outreach'  ? 'text-indigo-600 bg-indigo-50 border-indigo-200' :
+                        t.category === 'follow_up' ? 'text-amber-600 bg-amber-50 border-amber-200' :
+                        t.category === 'interview' ? 'text-green-600 bg-green-50 border-green-200' :
+                        t.category === 'offer'     ? 'text-violet-600 bg-violet-50 border-violet-200' :
+                                                     'text-neutral-500 bg-neutral-100 border-neutral-200'
+                      )}>
+                        {t.category.replace('_', ' ')}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {selected && (
+                <div className="px-5 py-3 border-t border-neutral-100 flex items-center justify-between">
+                  <span className="text-xs text-neutral-500">Using: <span className="font-medium text-neutral-700">{selected.name}</span></span>
+                  <button
+                    onClick={() => { onSelect(null); setOpen(false) }}
+                    className="text-[11px] text-red-400 hover:text-red-600 transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </>
+  )
+}
+
+
 function ComposeModal({ target, googleStatus, onClose, onSent }: {
   target: ComposeTarget
   googleStatus: GoogleStatus
   onClose: () => void
   onSent: () => void
 }) {
-  const [subject, setSubject] = useState('')
-  const [body, setBody]       = useState('')
-  const [sending, setSending] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [subject, setSubject]         = useState('')
+  const [body, setBody]               = useState('')
+  const [sending, setSending]         = useState(false)
+  const [error, setError]             = useState<string | null>(null)
+  const [templates, setTemplates]     = useState<OutreachTemplate[]>([])
+  const [tplLoading, setTplLoading]   = useState(false)
+  const [selectedTpl, setSelectedTpl] = useState<OutreachTemplate | null>(null)
+  const [aiLoading, setAiLoading]     = useState(false)
+  const [aiDone, setAiDone]           = useState(false)
+
+  useEffect(() => {
+    setTplLoading(true)
+    get<OutreachTemplate[]>('/api/v1/outreach/templates')
+      .then(setTemplates).catch(() => setTemplates([])).finally(() => setTplLoading(false))
+  }, [])
+
+  const applyTemplate = (t: OutreachTemplate | null) => {
+    setSelectedTpl(t)
+    setAiDone(false)
+    if (t) {
+      setSubject(renderTemplate(t.subject, target.candidate_name, target.candidate_email))
+      setBody(renderTemplate(t.body, target.candidate_name, target.candidate_email))
+    } else {
+      setSubject(''); setBody('')
+    }
+  }
+
+  const generateWithAI = async () => {
+    setAiLoading(true); setAiDone(false)
+    try {
+      const res = await post<{ body: string }>('/api/v1/outreach/generate-email', {
+        candidate_name: target.candidate_name,
+        subject: subject || undefined,
+        template_subject: selectedTpl?.subject || undefined,
+        template_body: selectedTpl?.body || undefined,
+      })
+      setBody(res.body)
+      setAiDone(true)
+    } catch {
+      setAiDone(false)
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   const send = async () => {
     if (!subject.trim() || !body.trim()) return
@@ -219,7 +393,7 @@ function ComposeModal({ target, googleStatus, onClose, onSent }: {
       <motion.div
         initial={{ opacity: 0, scale: 0.97, y: 6 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative bg-white rounded-xl shadow-xl border border-neutral-200 w-[460px] flex flex-col z-10"
+        className="relative bg-white rounded-xl shadow-xl border border-neutral-200 w-[480px] flex flex-col z-10"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
           <div className="flex items-center gap-2.5">
@@ -239,19 +413,46 @@ function ComposeModal({ target, googleStatus, onClose, onSent }: {
             <input
               autoFocus
               value={subject}
-              onChange={e => setSubject(e.target.value)}
+              onChange={e => { setSubject(e.target.value); setAiDone(false) }}
               placeholder="Email subject…"
               className="flex-1 text-xs text-neutral-800 bg-transparent placeholder-neutral-300 focus:outline-none"
             />
           </div>
-          <textarea
-            value={body}
-            onChange={e => setBody(e.target.value)}
-            placeholder={`Write to ${target.candidate_name}…`}
-            rows={6}
-            className="w-full text-xs text-neutral-800 bg-transparent placeholder-neutral-300 focus:outline-none resize-none"
-            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() }}
-          />
+          <div className="relative border border-neutral-200 rounded-lg overflow-hidden focus-within:border-violet-300 transition-colors bg-white">
+            <textarea
+              value={body}
+              onChange={e => { setBody(e.target.value); setAiDone(false) }}
+              placeholder={`Write to ${target.candidate_name}…`}
+              rows={7}
+              className="w-full px-3 pt-3 pb-11 text-xs text-neutral-800 bg-transparent placeholder-neutral-300 focus:outline-none resize-none"
+              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() }}
+            />
+            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+              <button
+                onClick={generateWithAI}
+                disabled={aiLoading}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all',
+                  aiLoading
+                    ? 'bg-neutral-100 text-neutral-400'
+                    : aiDone
+                    ? 'bg-green-100 text-green-700 border border-green-200'
+                    : 'bg-gradient-to-r from-orange-500 to-violet-600 text-white hover:opacity-90'
+                )}
+              >
+                {aiLoading
+                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
+                  : aiDone
+                  ? <><Check className="w-3 h-3" /> Generated</>
+                  : <><Sparkles className="w-3 h-3" /> Generate with AI ✦</>}
+              </button>
+              {!aiLoading && !aiDone && (subject || selectedTpl) && (
+                <span className="text-[10px] text-neutral-400 truncate max-w-[160px]">
+                  {selectedTpl ? `Template: ${selectedTpl.name}` : `Topic: ${subject.slice(0, 30)}`}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
         {error && (
           <div className="mx-4 mb-2 flex items-center gap-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -259,12 +460,12 @@ function ComposeModal({ target, googleStatus, onClose, onSent }: {
           </div>
         )}
         <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-100">
-          <div className="flex items-center gap-1.5">
-            <GmailIcon />
-            {googleStatus.gmail_connected
-              ? <span className="text-[11px] text-neutral-500">via {googleStatus.gmail_email ?? 'Gmail'}</span>
-              : <span className="text-[11px] text-amber-600">Gmail not connected</span>}
-          </div>
+          <TemplatePicker
+            templates={templates}
+            loading={tplLoading}
+            selected={selectedTpl}
+            onSelect={applyTemplate}
+          />
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-neutral-300">⌘↵</span>
             <button
@@ -317,6 +518,11 @@ export default function OutreachPage() {
   const [replyBody, setReplyBody]         = useState('')
   const [sending, setSending]             = useState(false)
   const [sendError, setSendError]         = useState<string | null>(null)
+  const [replyTemplates, setReplyTemplates]     = useState<OutreachTemplate[]>([])
+  const [replyTplLoading, setReplyTplLoading]   = useState(false)
+  const [replySelectedTpl, setReplySelectedTpl] = useState<OutreachTemplate | null>(null)
+  const [replyAiLoading, setReplyAiLoading]     = useState(false)
+  const [replyAiDone, setReplyAiDone]           = useState(false)
 
   const [allCandidates, setAllCandidates] = useState<ApiCandidate[]>([])
 
@@ -354,7 +560,59 @@ export default function OutreachPage() {
     }
   }, []) // eslint-disable-line
 
+  // Lightweight status re-check — only refreshes Gmail connection state
+  const refreshGoogleStatus = useCallback(async () => {
+    try {
+      const gStatus = await get<GoogleStatus>('/api/v1/google/status')
+      setGoogleStatus(gStatus)
+    } catch {}
+  }, [])
+
   useEffect(() => { loadContacts() }, [loadContacts])
+
+  // Re-check Google status whenever the tab regains focus so a disconnect
+  // on the Integrations page is immediately reflected here without a reload.
+  useEffect(() => {
+    window.addEventListener('focus', refreshGoogleStatus)
+    return () => window.removeEventListener('focus', refreshGoogleStatus)
+  }, [refreshGoogleStatus])
+
+  // Load templates once for the reply panel
+  useEffect(() => {
+    setReplyTplLoading(true)
+    get<OutreachTemplate[]>('/api/v1/outreach/templates')
+      .then(setReplyTemplates).catch(() => setReplyTemplates([])).finally(() => setReplyTplLoading(false))
+  }, [])
+
+  const applyReplyTemplate = (t: OutreachTemplate | null) => {
+    setReplySelectedTpl(t)
+    setReplyAiDone(false)
+    if (t && selected) {
+      setReplySubject(renderTemplate(t.subject, selected.candidate_name, selected.candidate_email, selected.role))
+      setReplyBody(renderTemplate(t.body, selected.candidate_name, selected.candidate_email, selected.role))
+    } else if (t) {
+      setReplySubject(t.subject); setReplyBody(t.body)
+    }
+  }
+
+  const generateReplyWithAI = async () => {
+    if (!selected) return
+    setReplyAiLoading(true); setReplyAiDone(false)
+    try {
+      const res = await post<{ body: string }>('/api/v1/outreach/generate-email', {
+        candidate_name: selected.candidate_name,
+        subject: replySubject || undefined,
+        template_subject: replySelectedTpl?.subject || undefined,
+        template_body: replySelectedTpl?.body || undefined,
+      })
+      setReplyBody(res.body)
+      setReplyAiDone(true)
+    } catch {
+      setReplyAiDone(false)
+    } finally {
+      setReplyAiLoading(false)
+    }
+  }
 
   const fetchConversation = useCallback(async (candidateId: string) => {
     setConvLoading(true); setMessages([])
@@ -701,29 +959,53 @@ export default function OutreachPage() {
                 <span className="text-neutral-400 text-[11px] w-12 flex-shrink-0">Subject</span>
                 <input
                   value={replySubject}
-                  onChange={e => setReplySubject(e.target.value)}
+                  onChange={e => { setReplySubject(e.target.value); setReplyAiDone(false) }}
                   className="flex-1 bg-transparent text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none"
                   placeholder="Email subject…"
                 />
               </div>
-              <div className="bg-neutral-50 border border-neutral-200 rounded-xl overflow-hidden focus-within:border-neutral-300 focus-within:bg-white transition-all">
-                <textarea
-                  value={replyBody}
-                  onChange={e => setReplyBody(e.target.value)}
-                  placeholder={`Reply to ${selected.candidate_name}…`}
-                  rows={4}
-                  className="w-full bg-transparent px-4 pt-3 pb-2 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none resize-none"
-                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply() }}
-                />
-                <div className="flex items-center justify-between px-3 pb-2.5 pt-1 border-t border-neutral-100">
-                  <div className="flex items-center gap-1.5">
-                    <GmailIcon />
-                    {googleStatus.gmail_connected
-                      ? <span className="text-[10px] text-neutral-500">via Gmail</span>
-                      : <span className="text-[10px] text-amber-600">Gmail not connected</span>}
+              <div className="bg-neutral-50 border border-neutral-200 rounded-xl overflow-hidden focus-within:border-violet-200 focus-within:bg-white transition-all">
+                <div className="relative">
+                  <textarea
+                    value={replyBody}
+                    onChange={e => { setReplyBody(e.target.value); setReplyAiDone(false) }}
+                    placeholder={`Reply to ${selected.candidate_name}…`}
+                    rows={4}
+                    className="w-full bg-transparent px-4 pt-3 pb-2 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none resize-none"
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply() }}
+                  />
+                </div>
+                <div className="flex items-center justify-between px-3 pb-2.5 pt-1 border-t border-neutral-100 gap-2">
+                  {/* Left: Template picker + AI generate */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <TemplatePicker
+                      templates={replyTemplates}
+                      loading={replyTplLoading}
+                      selected={replySelectedTpl}
+                      onSelect={applyReplyTemplate}
+                    />
+                    <button
+                      onClick={generateReplyWithAI}
+                      disabled={replyAiLoading}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex-shrink-0',
+                        replyAiLoading
+                          ? 'bg-neutral-100 text-neutral-400'
+                          : replyAiDone
+                          ? 'bg-green-100 text-green-700 border border-green-200'
+                          : 'bg-gradient-to-r from-orange-500 to-violet-600 text-white hover:opacity-90'
+                      )}
+                    >
+                      {replyAiLoading
+                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
+                        : replyAiDone
+                        ? <><Check className="w-3 h-3" /> Generated</>
+                        : <><Sparkles className="w-3 h-3" /> Generate with AI ✦</>}
+                    </button>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-neutral-300">⌘↵ to send</span>
+                  {/* Right: Send */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="text-[10px] text-neutral-300">⌘↵</span>
                     <button
                       onClick={sendReply}
                       disabled={sending || !replyBody.trim() || !replySubject.trim()}

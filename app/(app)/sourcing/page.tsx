@@ -3,12 +3,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ArrowRight, CheckCircle2, Circle, Loader2,
+  ArrowLeft, ArrowRight, CheckCircle2, Circle, Loader2,
   ExternalLink, Eye, ChevronRight, ChevronLeft,
   X, MapPin, Clock, Zap, BarChart3, Users, Copy,
-  Check, ThumbsUp, Filter, Diamond, LayoutList,
+  Check, ThumbsUp, Filter, LayoutList,
   LayoutGrid, BookMarked, GraduationCap, Briefcase,
-  ChevronDown, Mail, Phone, Plus, Tag,
+  ChevronDown, Tag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ParsedQuery, SourcingCandidate, SourcingRun } from '@/lib/sourcing-api'
@@ -21,7 +21,7 @@ type PageState  = 'idle' | 'searching' | 'results'
 type ResultTab  = 'results' | 'insights'
 type SearchMode = 'similar' | 'description' | 'boolean' | 'manual'
 type ViewMode   = 'card' | 'list'
-type PanelTab   = 'overview' | 'experience' | 'education' | 'skillmap'
+type RoleType   = 'dev' | 'non_dev'
 
 const SUGGESTIONS = [
   'Software Engineers in SF working at Series B companies, skilled in Python and Node.js',
@@ -67,267 +67,6 @@ function saveHistory(entries: HistoryEntry[]) {
 }
 
 // ─── Demo Data ────────────────────────────────────────────────────────────────
-const DEMO_CANDIDATES: SourcingCandidate[] = [
-  {
-    id: 'demo-1',
-    ai_score: 94,
-    ai_reasoning: 'Over 8 years building production Python and Node.js systems at high-growth startups. Strong open-source portfolio and recent Series B experience at a fintech company.',
-    candidate: {
-      name: 'Priya Nair',
-      title: 'Senior Software Engineer',
-      company: 'Brex',
-      location: 'San Francisco, CA',
-      linkedin_url: 'https://linkedin.com',
-      github_url: 'https://github.com',
-      experience: 8,
-      skills: ['Python', 'Node.js', 'TypeScript', 'Kubernetes', 'PostgreSQL', 'GraphQL'],
-      raw_profile: {
-        education_raw: ['B.S. Computer Science, UC Berkeley'],
-        experiences: [
-          { title: 'Senior Software Engineer', company: 'Brex', date: 'Jan 2022 – Present · 2 yrs 3 mos' },
-          { title: 'Software Engineer', company: 'Stripe', date: 'Mar 2019 – Dec 2021 · 2 yrs 9 mos' },
-          { title: 'Junior Engineer', company: 'Y Combinator Portfolio Co.', date: 'Jun 2016 – Feb 2019 · 2 yrs 8 mos' },
-        ],
-        educations: [
-          { degree: 'B.S. Computer Science', school: 'UC Berkeley', date: 'Sep 2012 – May 2016' },
-        ],
-        skill_sections: [
-          { label: 'Back-End', skills: ['Python', 'Node.js', 'GraphQL', 'PostgreSQL'] },
-          { label: 'Infrastructure', skills: ['Kubernetes', 'Docker', 'AWS'] },
-          { label: 'Additional', skills: ['TypeScript', 'REST APIs', 'System Design'] },
-        ],
-        tags: ['Fintech'],
-      },
-    },
-  },
-  {
-    id: 'demo-2',
-    ai_score: 91,
-    ai_reasoning: 'Led backend platform teams at two Series B fintech companies. Deep Python expertise with a focus on distributed systems and API design.',
-    candidate: {
-      name: 'Marcus Webb',
-      title: 'Staff Engineer',
-      company: 'Ramp',
-      location: 'New York, NY',
-      linkedin_url: 'https://linkedin.com',
-      github_url: 'https://github.com',
-      experience: 11,
-      skills: ['Python', 'Go', 'Node.js', 'AWS', 'Kafka', 'Redis'],
-      raw_profile: {
-        education_raw: ['M.S. Computer Science, Carnegie Mellon'],
-        experiences: [
-          { title: 'Staff Engineer', company: 'Ramp', date: 'Apr 2021 – Present · 3 yrs' },
-          { title: 'Senior Engineer', company: 'Plaid', date: 'Jan 2018 – Mar 2021 · 3 yrs 2 mos' },
-          { title: 'Software Engineer', company: 'Goldman Sachs', date: 'Jul 2013 – Dec 2017 · 4 yrs 5 mos' },
-        ],
-        educations: [
-          { degree: 'M.S. Computer Science', school: 'Carnegie Mellon University', date: 'Sep 2011 – May 2013' },
-        ],
-        skill_sections: [
-          { label: 'Back-End', skills: ['Python', 'Go', 'Kafka', 'Redis'] },
-          { label: 'Cloud', skills: ['AWS', 'Node.js', 'Terraform'] },
-        ],
-        tags: [],
-      },
-    },
-  },
-  {
-    id: 'demo-3',
-    ai_score: 88,
-    ai_reasoning: 'Full-stack background with strong Node.js focus. Previously at Stripe and a Series B logistics startup. Active GitHub contributor.',
-    candidate: {
-      name: 'Sofia Lindqvist',
-      title: 'Software Engineer',
-      company: 'Stripe',
-      location: 'San Francisco, CA',
-      linkedin_url: 'https://linkedin.com',
-      github_url: 'https://github.com',
-      experience: 6,
-      skills: ['Node.js', 'React', 'TypeScript', 'Python', 'Docker'],
-      raw_profile: {
-        education_raw: ['B.S. Software Engineering, Stanford University'],
-        experiences: [
-          { title: 'Software Engineer', company: 'Stripe', date: 'Aug 2021 – Present · 2 yrs 7 mos' },
-          { title: 'Frontend Engineer', company: 'Flexport', date: 'Jun 2018 – Jul 2021 · 3 yrs 1 mo' },
-        ],
-        educations: [
-          { degree: 'B.S. Software Engineering', school: 'Stanford University', date: 'Sep 2014 – Jun 2018' },
-        ],
-        skill_sections: [
-          { label: 'Front-End', skills: ['React', 'TypeScript', 'Node.js'] },
-          { label: 'Back-End', skills: ['Python', 'Docker', 'REST APIs'] },
-        ],
-        tags: [],
-      },
-    },
-  },
-  {
-    id: 'demo-4',
-    ai_score: 85,
-    ai_reasoning: 'Python specialist with ML infrastructure experience at a Series B AI company. Solid Node.js skills from previous roles.',
-    candidate: {
-      name: 'Kwame Asante',
-      title: 'Backend Engineer',
-      company: 'Scale AI',
-      location: 'San Francisco, CA',
-      linkedin_url: 'https://linkedin.com',
-      github_url: 'https://github.com',
-      experience: 5,
-      skills: ['Python', 'Node.js', 'PyTorch', 'FastAPI', 'MongoDB'],
-      raw_profile: {
-        education_raw: ['B.S. Computer Science, MIT'],
-        experiences: [
-          { title: 'Backend Engineer', company: 'Scale AI', date: 'Mar 2022 – Present · 2 yrs' },
-          { title: 'ML Engineer', company: 'Weights & Biases', date: 'Jan 2019 – Feb 2022 · 3 yrs 1 mo' },
-        ],
-        educations: [
-          { degree: 'B.S. Computer Science', school: 'Massachusetts Institute of Technology', date: 'Sep 2015 – May 2019' },
-        ],
-        skill_sections: [
-          { label: 'Back-End', skills: ['Python', 'FastAPI', 'MongoDB', 'Node.js'] },
-          { label: 'ML', skills: ['PyTorch', 'NumPy', 'Pandas'] },
-        ],
-        tags: ['AI'],
-      },
-    },
-  },
-  {
-    id: 'demo-5',
-    ai_score: 83,
-    ai_reasoning: '7 years as a generalist engineer with Node.js as primary stack. Currently at a fintech Series B building real-time payment systems.',
-    candidate: {
-      name: 'Aiko Tanaka',
-      title: 'Senior Software Engineer',
-      company: 'Mercury',
-      location: 'Remote (US)',
-      linkedin_url: 'https://linkedin.com',
-      github_url: 'https://github.com',
-      experience: 7,
-      skills: ['Node.js', 'TypeScript', 'Python', 'React', 'PostgreSQL'],
-      raw_profile: {
-        education_raw: ['B.Eng. Computer Engineering, University of Toronto'],
-        experiences: [
-          { title: 'Senior Software Engineer', company: 'Mercury', date: 'Oct 2020 – Present · 3 yrs 5 mos' },
-          { title: 'Software Engineer', company: 'Shopify', date: 'Jul 2017 – Sep 2020 · 3 yrs 2 mos' },
-        ],
-        educations: [
-          { degree: 'B.Eng. Computer Engineering', school: 'University of Toronto', date: 'Sep 2013 – Apr 2017' },
-        ],
-        skill_sections: [
-          { label: 'Back-End', skills: ['Node.js', 'TypeScript', 'Python', 'PostgreSQL'] },
-          { label: 'Front-End', skills: ['React', 'HTML', 'CSS'] },
-        ],
-        tags: ['Fintech'],
-      },
-    },
-  },
-  {
-    id: 'demo-6',
-    ai_score: 80,
-    ai_reasoning: 'Strong Python background with experience in data pipelines. Contributed to Node.js microservices at a Series B SaaS startup.',
-    candidate: {
-      name: 'Diego Reyes',
-      title: 'Software Engineer',
-      company: 'Rippling',
-      location: 'San Francisco, CA',
-      linkedin_url: 'https://linkedin.com',
-      github_url: 'https://github.com',
-      experience: 4,
-      skills: ['Python', 'Node.js', 'Celery', 'Django', 'React'],
-      raw_profile: {
-        education_raw: ['B.S. Computer Science, UCLA'],
-        experiences: [
-          { title: 'Software Engineer', company: 'Rippling', date: 'Jun 2022 – Present · 1 yr 9 mos' },
-          { title: 'Backend Engineer', company: 'Gusto', date: 'Aug 2020 – May 2022 · 1 yr 9 mos' },
-        ],
-        educations: [
-          { degree: 'B.S. Computer Science', school: 'UCLA', date: 'Sep 2016 – Jun 2020' },
-        ],
-        skill_sections: [
-          { label: 'Back-End', skills: ['Python', 'Django', 'Celery', 'Node.js'] },
-          { label: 'Front-End', skills: ['React', 'JavaScript'] },
-        ],
-        tags: [],
-      },
-    },
-  },
-  {
-    id: 'demo-7',
-    ai_score: 78,
-    ai_reasoning: 'Experienced infrastructure engineer with Python automation expertise. Has worked at two Bay Area Series B companies in the last 4 years.',
-    candidate: {
-      name: 'Hannah Park',
-      title: 'Platform Engineer',
-      company: 'Figma',
-      location: 'San Francisco, CA',
-      linkedin_url: 'https://linkedin.com',
-      github_url: 'https://github.com',
-      experience: 6,
-      skills: ['Python', 'Terraform', 'Node.js', 'AWS', 'Kubernetes'],
-      raw_profile: {
-        education_raw: ['B.S. Electrical Engineering, University of Washington'],
-        experiences: [
-          { title: 'Platform Engineer', company: 'Figma', date: 'Jan 2022 – Present · 2 yrs 2 mos' },
-          { title: 'DevOps Engineer', company: 'Databricks', date: 'Mar 2018 – Dec 2021 · 3 yrs 9 mos' },
-        ],
-        educations: [
-          { degree: 'B.S. Electrical Engineering', school: 'University of Washington', date: 'Sep 2014 – Jun 2018' },
-        ],
-        skill_sections: [
-          { label: 'Infrastructure', skills: ['Terraform', 'Kubernetes', 'AWS', 'Docker'] },
-          { label: 'Languages', skills: ['Python', 'Node.js', 'Bash'] },
-        ],
-        tags: [],
-      },
-    },
-  },
-  {
-    id: 'demo-8',
-    ai_score: 75,
-    ai_reasoning: 'Node.js expert who has shipped multiple production APIs. Currently at a Series B healthcare startup, previously at a growth-stage fintech.',
-    candidate: {
-      name: 'Ethan Brooks',
-      title: 'Software Engineer',
-      company: 'Collected Health',
-      location: 'Austin, TX',
-      linkedin_url: 'https://linkedin.com',
-      github_url: 'https://github.com',
-      experience: 5,
-      skills: ['Node.js', 'Express', 'Python', 'MySQL', 'TypeScript'],
-      raw_profile: {
-        education_raw: ['B.S. Computer Science, UT Austin'],
-        experiences: [
-          { title: 'Software Engineer', company: 'Collected Health', date: 'May 2022 – Present · 1 yr 10 mos' },
-          { title: 'Software Engineer', company: 'Nomad Health', date: 'Jul 2019 – Apr 2022 · 2 yrs 9 mos' },
-        ],
-        educations: [
-          { degree: 'B.S. Computer Science', school: 'University of Texas at Austin', date: 'Sep 2015 – May 2019' },
-        ],
-        skill_sections: [
-          { label: 'Back-End', skills: ['Node.js', 'Express', 'Python', 'MySQL'] },
-          { label: 'Additional', skills: ['TypeScript', 'REST APIs', 'Git'] },
-        ],
-        tags: ['Healthcare'],
-      },
-    },
-  },
-]
-
-const DEMO_RUN: SourcingRun = {
-  id: 'demo-run-1',
-  status: 'completed',
-  created_at: new Date().toISOString(),
-  criteria: {},
-}
-
-const DEMO_PARSED: ParsedQuery = {
-  location: 'San Francisco',
-  job_title: 'Software Engineer',
-  experience_min: 5,
-  industry: 'Fintech',
-  skills: ['Python', 'Node.js'],
-  detected: ['location', 'job_title', 'experience', 'skills', 'industry'],
-}
 
 // ─── Avatar colors ─────────────────────────────────────────────────────────────
 const AVATAR_COLORS = [
@@ -342,6 +81,19 @@ const AVATAR_COLORS = [
 function avatarColor(name: string) {
   const idx = name.charCodeAt(0) % AVATAR_COLORS.length
   return AVATAR_COLORS[idx]
+}
+
+// ─── Normalize AI reasoning language ─────────────────────────────────────────
+function normalizeReasoning(text: string | null | undefined): string | null | undefined {
+  if (!text) return text
+  return text
+    .replace(/\bno evidence\b/gi, 'not adequate evidence')
+    .replace(/\blacks? evidence\b/gi, 'lacks adequate evidence')
+    .replace(/\bno (clear |direct )?evidence of\b/gi, 'not adequate evidence of')
+    .replace(/\bdoes not (appear to |seem to )?meet\b/gi, 'does not adequately meet')
+    .replace(/\bdoes not demonstrate\b/gi, 'does not adequately demonstrate')
+    .replace(/\bnot found\b/gi, 'not adequately demonstrated')
+    .replace(/\bcannot (be )?confirmed\b/gi, 'is not adequately confirmed')
 }
 
 // ─── LinkedIn Icon ────────────────────────────────────────────────────────────
@@ -618,40 +370,7 @@ function ShortlistModal({
 
 // ─── Parse helpers: bridge structured demo data ↔ real scraper data ──────────
 
-/** Prefer raw_profile.experiences (structured); fall back to experience_raw (string[]) from scraper */
-function parseExperiences(result: SourcingCandidate): { title: string; company: string; date?: string }[] {
-  const rp = result.candidate.raw_profile
-  if (rp?.experiences && rp.experiences.length > 0) return rp.experiences
-  if (rp?.experience_raw && (rp.experience_raw as string[]).length > 0) {
-    return (rp.experience_raw as string[]).map((line: string) => {
-      const atMatch = line.match(/^(.+?)\s*[@at]\s*(.+?)(?:\s*[·•]\s*(.+))?$/)
-      if (atMatch) return { title: atMatch[1].trim(), company: atMatch[2].trim(), date: atMatch[3]?.trim() }
-      return { title: line, company: '' }
-    })
-  }
-  if (result.candidate.title || result.candidate.company) {
-    return [{
-      title: result.candidate.title ?? 'Unknown Role',
-      company: result.candidate.company ?? '',
-      date: result.candidate.experience != null ? `${result.candidate.experience} yrs exp` : undefined,
-    }]
-  }
-  return []
-}
 
-/** Prefer raw_profile.educations (structured); fall back to education_raw (string[]) from scraper */
-function parseEducations(result: SourcingCandidate): { degree: string; school: string; date?: string }[] {
-  const rp = result.candidate.raw_profile
-  if (rp?.educations && rp.educations.length > 0) return rp.educations
-  if (rp?.education_raw && (rp.education_raw as string[]).length > 0) {
-    return (rp.education_raw as string[]).map((line: string) => {
-      const commaIdx = line.lastIndexOf(',')
-      if (commaIdx !== -1) return { degree: line.slice(0, commaIdx).trim(), school: line.slice(commaIdx + 1).trim() }
-      return { degree: line, school: '' }
-    })
-  }
-  return []
-}
 
 /** Prefer raw_profile.skill_sections (structured); fall back to top-level candidate.skills (flat[]) */
 function parseSkillSections(result: SourcingCandidate): { label: string; skills: string[] }[] {
@@ -662,21 +381,43 @@ function parseSkillSections(result: SourcingCandidate): { label: string; skills:
   return []
 }
 
-// ─── Company Logo Avatar ──────────────────────────────────────────────────────
-function CompanyLogo({ company, logoUrl, size = 36 }: { company: string; logoUrl?: string; size?: number }) {
-  const [failed, setFailed] = useState(false)
-  const letter = (company ?? '?').charAt(0).toUpperCase()
-  if (logoUrl && !failed) {
-    return (
-      <img src={logoUrl} alt={company} onError={() => setFailed(true)}
-        className="rounded-lg object-contain bg-white border border-neutral-100 flex-shrink-0"
-        style={{ width: size, height: size }} />
-    )
-  }
+
+// ─── AI Score Circle ──────────────────────────────────────────────────────────
+function ScoreCircle({ score }: { score: number | null | undefined }) {
+  const SIZE = 96, CX = 48, CY = 48, R = 38, SW = 7
+  const circ = 2 * Math.PI * R
+  const color =
+    score == null ? '#d1d5db'
+    : score >= 85  ? '#10b981'
+    : score >= 70  ? '#f59e0b'
+    :                '#ef4444'
+  const arc = score != null ? (Math.min(score, 100) / 100) * circ : 0
+
   return (
-    <div className="rounded-lg border border-neutral-200 bg-neutral-100 flex items-center justify-center font-semibold text-neutral-500 flex-shrink-0 text-[11px]"
-      style={{ width: size, height: size }}>
-      {letter}
+    <div style={{ position: 'relative', width: SIZE, height: SIZE, flexShrink: 0 }}>
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+        <circle cx={CX} cy={CY} r={R} fill="none" stroke="#f3f4f6" strokeWidth={SW} />
+        {score != null && (
+          <circle
+            cx={CX} cy={CY} r={R} fill="none"
+            stroke={color} strokeWidth={SW}
+            strokeDasharray={`${arc} ${circ - arc}`}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${CX} ${CY})`}
+            style={{ transition: 'stroke-dasharray 0.55s ease' }}
+          />
+        )}
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        {score != null ? (
+          <>
+            <span style={{ fontSize: 24, fontWeight: 700, color, lineHeight: 1 }}>{score}</span>
+            <span style={{ fontSize: 9, color: '#9ca3af', marginTop: 2, letterSpacing: '0.07em', textTransform: 'uppercase' }}>score</span>
+          </>
+        ) : (
+          <Loader2 size={16} className="animate-spin text-neutral-300" />
+        )}
+      </div>
     </div>
   )
 }
@@ -692,178 +433,111 @@ function CandidatePanel({
 }) {
   const c = result.candidate
   const photo = c.raw_profile?.photo_url
-  const experiences   = parseExperiences(result)
-  const educations    = parseEducations(result)
   const skillSections = parseSkillSections(result)
   const tags = c.raw_profile?.tags ?? []
-  const companyLogo = typeof c.raw_profile?.company_logo === 'string' ? c.raw_profile.company_logo : undefined
   const color = avatarColor(c.name)
-
-  // Tenure helpers
-  function parseTenureMonths(dateStr?: string): number {
-    if (!dateStr) return 0
-    const y = dateStr.match(/(\d+)\s*yr/); const mo = dateStr.match(/(\d+)\s*mo/)
-    return (y ? parseInt(y[1]) * 12 : 0) + (mo ? parseInt(mo[1]) : 0)
-  }
-  function fmtMonths(m: number) {
-    if (!m) return '—'
-    const y = Math.floor(m / 12), mo = m % 12
-    return [y ? `${y} yr${y > 1 ? 's' : ''}` : '', mo ? `${mo} mo` : ''].filter(Boolean).join(' ')
-  }
-  const tenures = experiences.map(e => parseTenureMonths(e.date?.split('·')[1]))
-  const nonZeroTenures = tenures.filter(t => t > 0)
-  const avgTenure = fmtMonths(nonZeroTenures.length ? Math.round(nonZeroTenures.reduce((a,b)=>a+b,0)/nonZeroTenures.length) : 0)
-  const currentTenure = fmtMonths(tenures[0] ?? 0)
-  // total: prefer candidate.experience, then raw_profile.experience_years, then sum of durations
   const rawExpYears = typeof c.raw_profile?.experience_years === 'number' ? c.raw_profile.experience_years : null
-  const totalExpNum = c.experience ?? rawExpYears ?? (nonZeroTenures.length ? Math.round(nonZeroTenures.reduce((a,b)=>a+b,0)/12) : null)
-  const totalExp = totalExpNum != null ? `${totalExpNum} yrs` : '—'
+  const expYears = c.experience ?? rawExpYears
 
   return (
     <motion.div
       initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }}
       exit={{ x: 40, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="w-[360px] flex-shrink-0 border-l border-neutral-200 bg-white flex flex-col overflow-hidden"
+      className="w-[300px] flex-shrink-0 border-l border-neutral-200 bg-white flex flex-col overflow-hidden"
     >
-      {/* Header */}
-      <div className="px-4 pt-4 pb-3 border-b border-neutral-100">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2.5">
-            {photo
-              ? <img src={photo} alt={c.name} className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-neutral-100" />
-              : <div className={cn('w-9 h-9 rounded-full flex items-center justify-center font-semibold text-xs flex-shrink-0', color.bg, color.text)}>
-                  {c.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}
-                </div>
-            }
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[13.5px] font-semibold text-neutral-900 leading-tight">{c.name}</span>
-                {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"><LinkedInIcon size={14} /></a>}
+      {/* ── Person header ── */}
+      <div className="px-4 pt-3 pb-3 border-b border-neutral-100">
+        {/* close row */}
+        <div className="flex justify-end mb-1.5">
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 transition-colors">
+            <X size={13} />
+          </button>
+        </div>
+        {/* avatar + name */}
+        <div className="flex items-center gap-3 min-w-0">
+          {photo
+            ? <img src={photo} alt={c.name} className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-neutral-100" />
+            : <div className={cn('w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0', color.bg, color.text)}>
+                {c.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()}
               </div>
-              {(c.title || c.company) && (
-                <p className="text-[11.5px] text-neutral-500 leading-tight truncate">
-                  {c.title}{c.title && c.company ? ' · ' : ''}{c.company}
-                </p>
+          }
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[13px] font-semibold text-neutral-900 leading-tight truncate">{c.name}</span>
+              {c.linkedin_url && (
+                <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
+                  <LinkedInIcon size={13} />
+                </a>
               )}
             </div>
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {c.linkedin_url && (
-              <a href={c.linkedin_url} target="_blank" rel="noopener noreferrer"
-                className="text-[11px] text-violet-600 font-medium hover:text-violet-700 transition-colors whitespace-nowrap">
-                Full Profile
-              </a>
+            {(c.title || c.company) && (
+              <p className="text-[11px] text-neutral-500 leading-tight truncate">
+                {c.title}{c.title && c.company ? ' · ' : ''}{c.company}
+              </p>
             )}
-            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 transition-colors p-0.5"><X size={13} /></button>
+            {c.location && (
+              <p className="flex items-center gap-1 text-[10.5px] text-neutral-400 mt-0.5 truncate">
+                <MapPin size={9} className="flex-shrink-0" />{c.location}
+              </p>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {c.location && <span className="flex items-center gap-1 text-[11px] text-neutral-400"><MapPin size={10}/>{c.location}</span>}
+        {/* tags + exp */}
+        <div className="flex items-center gap-1.5 flex-wrap mt-2">
+          {expYears != null && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 text-[10px] font-medium">
+              <Briefcase size={8} />{expYears} yrs exp
+            </span>
+          )}
           {tags.map(tag => (
             <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-medium">
-              <Tag size={8}/>{tag}
+              <Tag size={8} />{tag}
             </span>
           ))}
         </div>
+        {/* description — capped, no overflow */}
+        {c.raw_profile?.summary && (
+          <p className="mt-2 text-[11px] text-neutral-500 leading-relaxed line-clamp-3 break-words">
+            {c.raw_profile.summary}
+          </p>
+        )}
       </div>
 
-      {/* Actions */}
-      <div className="px-4 py-2.5 border-b border-neutral-100 flex items-center gap-2">
-        <div className="flex items-center gap-2 text-[11.5px] text-neutral-400 flex-1">
-          <Mail size={11} className="flex-shrink-0"/>
-          <span>No email</span>
-          <span className="text-neutral-200">·</span>
-          <button className="text-violet-600 font-medium hover:text-violet-700 transition-colors">+ Add</button>
-        </div>
-        <ShortlistButton id={result.id} state={shortlistState[result.id] ?? 'idle'} onShortlist={onShortlist} compact />
-      </div>
-
-      {/* Single scroll body */}
+      {/* ── Scrollable body ── */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* Tenure stats */}
-        <div className="px-4 pt-4 pb-3">
-          <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-2">Experience</p>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: 'AVG TENURE',  value: avgTenure },
-              { label: 'CURRENT',     value: currentTenure },
-              { label: 'TOTAL EXP',   value: totalExp },
-            ].map(s => (
-              <div key={s.label} className="bg-neutral-50 rounded-xl border border-neutral-100 p-2.5">
-                <p className="text-[8.5px] text-neutral-400 uppercase tracking-wide leading-tight mb-1">{s.label}</p>
-                <p className="text-[12px] font-semibold text-neutral-800">{s.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* AI Score circle + statement */}
+        <div className="flex flex-col items-center px-4 pt-5 pb-3">
+          <ScoreCircle score={result.ai_score} />
 
-        {/* Experience list — LinkedIn style with logo + connecting line */}
-        {experiences.length > 0 && (
-          <div className="px-4 pb-2">
-            {experiences.map((exp, i) => {
-              const expSkills: string[] = (exp as any).skills ?? []
-              return (
-                <div key={i} className="flex gap-3 pb-4">
-                  <div className="flex flex-col items-center">
-                    <CompanyLogo company={exp.company} logoUrl={i === 0 ? companyLogo : undefined} size={34} />
-                    {i < experiences.length - 1 && <div className="w-px flex-1 mt-1.5 bg-neutral-200" style={{minHeight:16}} />}
-                  </div>
-                  <div className="flex-1 min-w-0 pt-0.5">
-                    <p className="text-[12.5px] font-semibold text-neutral-900 leading-snug">{exp.title}</p>
-                    <p className="text-[12px] text-neutral-600 leading-snug">{exp.company}</p>
-                    {exp.date && <p className="text-[11px] text-neutral-400 mt-0.5">{exp.date}</p>}
-                    {expSkills.length > 0 && (
-                      <p className="text-[11px] text-neutral-500 mt-1.5 leading-relaxed">
-                        <span className="font-medium">Skills:</span> {expSkills.join(' · ')}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        <div className="mx-4 border-t border-neutral-100 my-1" />
-
-        {/* Education */}
-        <div className="px-4 pt-3 pb-4">
-          <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-3">Education</p>
-          {educations.length > 0 ? (
-            <div className="space-y-4">
-              {educations.map((edu, i) => (
-                <div key={i} className="flex gap-3">
-                  <div className="w-[34px] h-[34px] rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0">
-                    <GraduationCap size={15} className="text-blue-500" />
-                  </div>
-                  <div className="flex-1 min-w-0 pt-0.5">
-                    <p className="text-[12.5px] font-semibold text-neutral-900 leading-snug">{edu.school}</p>
-                    <p className="text-[12px] text-neutral-600 leading-snug">{edu.degree}</p>
-                    {edu.date && <p className="text-[11px] text-neutral-400 mt-0.5">{edu.date}</p>}
-                  </div>
-                </div>
-              ))}
+          {result.ai_reasoning ? (
+            <div className="mt-3 w-full bg-violet-50 border border-violet-100 rounded-xl px-3 py-2.5">
+              <p className="text-[9.5px] font-semibold text-violet-400 uppercase tracking-widest mb-1">AI Assessment</p>
+              <p className="text-[11px] text-violet-900 leading-relaxed">
+                {normalizeReasoning(result.ai_reasoning)}
+              </p>
             </div>
-          ) : (
-            <p className="text-[12px] text-neutral-400">No education data.</p>
-          )}
+          ) : result.ai_score == null ? (
+            <p className="mt-2 text-[11px] text-neutral-400 flex items-center gap-1.5">
+              <Loader2 size={10} className="animate-spin" />Scoring in progress…
+            </p>
+          ) : null}
         </div>
 
-        <div className="mx-4 border-t border-neutral-100 my-1" />
+        <div className="mx-4 border-t border-neutral-100" />
 
         {/* Skill Map */}
         {skillSections.length > 0 && (
-          <div className="px-4 pt-3 pb-6">
-            <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mb-3">Skill Map</p>
-            <div className="space-y-3">
+          <div className="px-4 pt-3 pb-5">
+            <p className="text-[9.5px] font-semibold text-neutral-400 uppercase tracking-widest mb-2.5">Skill Map</p>
+            <div className="space-y-2">
               {skillSections.map((section, i) => (
-                <div key={i} className="border border-neutral-200 rounded-xl p-3">
-                  <p className="text-[10.5px] font-semibold text-neutral-500 mb-2">{section.label}</p>
-                  <div className="flex flex-wrap gap-1.5">
+                <div key={i} className="border border-neutral-200 rounded-xl p-2.5">
+                  <p className="text-[10px] font-semibold text-neutral-500 mb-1.5">{section.label}</p>
+                  <div className="flex flex-wrap gap-1">
                     {section.skills.map(skill => (
-                      <span key={skill} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-violet-100 bg-violet-50 text-[11px] text-violet-700 font-medium">
-                        <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" className="opacity-60"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+                      <span key={skill} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-violet-100 bg-violet-50 text-[10.5px] text-violet-700 font-medium">
+                        <svg width="7" height="7" viewBox="0 0 24 24" fill="currentColor" className="opacity-50 flex-shrink-0"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
                         {skill}
                       </span>
                     ))}
@@ -873,9 +547,10 @@ function CandidatePanel({
             </div>
           </div>
         )}
+
       </div>
 
-      {/* Footer */}
+      {/* ── Footer: Shortlist button ── */}
       <div className="px-4 py-3 border-t border-neutral-100">
         <ShortlistButton id={result.id} state={shortlistState[result.id] ?? 'idle'} onShortlist={onShortlist} full />
       </div>
@@ -893,7 +568,11 @@ function CandidateCardRow({
 }) {
   const c         = result.candidate
   const photo     = c.raw_profile?.photo_url
-  const education = Array.isArray(c.raw_profile?.education_raw) ? c.raw_profile.education_raw[0] : null
+  const education = (
+    c.raw_profile?.educations?.[0]?.school
+      ? `${c.raw_profile.educations[0].school}${c.raw_profile.educations[0].degree ? ', ' + c.raw_profile.educations[0].degree : ''}`
+      : Array.isArray(c.raw_profile?.education_raw) ? c.raw_profile!.education_raw![0] : null
+  )
 
   return (
     <motion.div
@@ -939,6 +618,24 @@ function CandidateCardRow({
               <GitHubIcon size={15} />
             </a>
           )}
+          {result.ai_score != null ? (
+            <span className={[
+              'ml-1 inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10.5px] font-bold border',
+              result.ai_score >= 85
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : result.ai_score >= 70
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-red-50 text-red-600 border-red-200'
+            ].join(' ')}>
+              <BarChart3 size={9} strokeWidth={2.5} />
+              {result.ai_score}
+            </span>
+          ) : (
+            <span className="ml-1 inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10.5px] font-medium border bg-neutral-50 text-neutral-400 border-neutral-200">
+              <Loader2 size={9} className="animate-spin" />
+              Scoring
+            </span>
+          )}
         </div>
 
         {/* Title + company + location */}
@@ -973,15 +670,37 @@ function CandidateCardRow({
 
         {/* Criteria rows */}
         <div className="pt-1 space-y-2">
-          {c.experience != null && (
+          {(result.ai_score != null || c.experience != null) && (
             <div className="flex items-start gap-4">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-[5px] rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-medium whitespace-nowrap flex-shrink-0 w-[100px]">
-                <ThumbsUp size={10} strokeWidth={2.5} />
-                Experience
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-[5px] rounded-full bg-violet-50 text-violet-700 border border-violet-200 text-[11px] font-medium whitespace-nowrap flex-shrink-0 w-[100px]">
+                <BarChart3 size={10} strokeWidth={2.5} />
+                AI Score
               </span>
-              <p className="text-[12px] text-neutral-600 leading-relaxed mt-0.5">
-                {result.ai_reasoning ?? `Candidate has ${c.experience}+ years of relevant experience.`}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                {result.ai_score != null ? (
+                  <span className={[
+                    'inline-flex items-center gap-1 px-2.5 py-[3px] rounded-full text-[11px] font-bold border',
+                    result.ai_score >= 85
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : result.ai_score >= 70
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-red-50 text-red-600 border-red-200'
+                  ].join(' ')}>
+                    {result.ai_score}/100
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-[3px] rounded-full text-[11px] font-medium border bg-neutral-50 text-neutral-400 border-neutral-200">
+                    <Loader2 size={10} className="animate-spin" />
+                    Scoring…
+                  </span>
+                )}
+                {c.experience != null && (
+                  <span className="text-[11px] text-neutral-400">{c.experience} yrs exp</span>
+                )}
+                {result.ai_reasoning && (
+                  <span className="text-[11px] text-neutral-500 leading-relaxed line-clamp-2 w-full">{normalizeReasoning(result.ai_reasoning)}</span>
+                )}
+              </div>
             </div>
           )}
           {(c.skills ?? []).length > 0 && (
@@ -1019,8 +738,7 @@ function CandidateListRow({
 }) {
   const c        = result.candidate
   const photo    = c.raw_profile?.photo_url
-  const rawExpYears = typeof c.raw_profile?.experience_years === 'number' ? c.raw_profile.experience_years : null
-  const expNum   = c.experience ?? rawExpYears
+  // experience_years available via raw_profile if needed
 
   return (
     <tr
@@ -1072,18 +790,24 @@ function CandidateListRow({
         <ShortlistButton id={result.id} state={shortlistState[result.id] ?? 'idle'} onShortlist={onShortlist} compact />
       </td>
 
-      {/* match score */}
-      <td className="px-2 py-2.5">
-        <span className="text-[11.5px] font-semibold text-neutral-700">
-          {result.ai_score != null ? `${result.ai_score}%` : '—'}
-        </span>
-      </td>
-
-      {/* experience */}
+      {/* ai score */}
       <td className="px-2 py-2.5 pr-3">
-        <span className="text-[11px] text-neutral-600">
-          {expNum != null ? `${expNum} yr${expNum !== 1 ? 's' : ''}` : '—'}
-        </span>
+        {result.ai_score != null ? (
+          <span className={[
+            'inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10.5px] font-bold border',
+            result.ai_score >= 85
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : result.ai_score >= 70
+              ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : 'bg-red-50 text-red-600 border-red-200'
+          ].join(' ')}>
+            {result.ai_score}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10.5px] font-medium border bg-neutral-50 text-neutral-400 border-neutral-200">
+            <Loader2 size={9} className="animate-spin" />
+          </span>
+        )}
       </td>
     </tr>
   )
@@ -1205,6 +929,7 @@ export default function SourcingPage() {
 
   const [pageState, setPageState]         = useState<PageState>('idle')
   const [mode, setMode]                   = useState<SearchMode>('similar')
+  const [roleType, setRoleType]           = useState<RoleType>('dev')
   const [query, setQuery]                 = useState('')
   const [parsed, setParsed]               = useState<ParsedQuery | null>(null)
   const [run, setRun]                     = useState<SourcingRun | null>(null)
@@ -1216,17 +941,25 @@ export default function SourcingPage() {
   const [error, setError]                 = useState<string | null>(null)
   const [focused, setFocused]             = useState(false)
   const [allSelected, setAllSelected]     = useState(false)
-  const [activeCandidate, setActiveCandidate] = useState<SourcingCandidate | null>(null)
-  const [selectedJobId, setSelectedJobId]     = useState<string>('')
+  const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null)
+  // Always derived from live results — never a stale snapshot
+  const activeCandidate = results.find(r => r.id === activeCandidateId) ?? null
+  const [selectedJobId] = useState<string>('')
   const [shortlistState, setShortlistState]   = useState<Record<string, 'idle' | 'loading' | 'done' | 'error'>>({})
   const [shortlistModal, setShortlistModal]   = useState<{ ids: string[]; apiIds: string[]; names: string[] } | null>(null)
-  const [platforms, setPlatforms]             = useState<string[]>(['linkedin', 'github'])
-  const [history, setHistory]                 = useState<HistoryEntry[]>(() => {
-    if (typeof window === 'undefined') return []
-    return loadHistory()
-  })
+  const [sortBy, setSortBy]                   = useState<'ai_score' | 'name' | 'experience'>('ai_score')
+  const [sortDir, setSortDir]                 = useState<'desc' | 'asc'>('desc')
+  const [showSortModal, setShowSortModal]     = useState(false)
+  const [history, setHistory]                 = useState<HistoryEntry[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const loadMorePollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  // Load history from localStorage only on the client (avoids SSR hydration mismatch)
+  useEffect(() => {
+    setHistory(loadHistory())
+  }, [])
 
   const { jobs } = useJobs()
 
@@ -1317,6 +1050,7 @@ export default function SourcingPage() {
       ecommerce: 'E-commerce', 'e-commerce': 'E-commerce',
       logistics: 'Logistics', crypto: 'Crypto', ai: 'AI',
     }
+
     const foundIndustry = Object.entries(INDUSTRIES).find(([k]) => lower.includes(k))
     const industry = foundIndustry?.[1]
     if (industry) detected.push('industry')
@@ -1361,7 +1095,7 @@ export default function SourcingPage() {
     setResults(entry.results)
     setRun(entry.run)
     setPage(1)
-    setActiveCandidate(null)
+    setActiveCandidateId(null)
     setPageState('results')
     setActiveHistoryId(entry.id)
     setFocused(false)
@@ -1374,18 +1108,22 @@ export default function SourcingPage() {
     setResults([])
     setPage(1)
     setFocused(false)
-    setActiveCandidate(null)
+    setActiveCandidateId(null)
     setActiveHistoryId(null)
 
     const p = parsed ?? parseQueryLocally(query)
     setParsed(p)
 
-    const jobId = selectedJobId || jobs?.[0]?.id || ''
 
     try {
+      // Route platforms by role type:
+      //   dev     → github + linkedin (GitHub fast ~10s, LinkedIn enriches in background)
+      //   non_dev → linkedin only     (GitHub useless for non-engineers)
+      const activePlatforms = roleType === 'non_dev' ? ['linkedin'] : ['github', 'linkedin']
+
       const newRun = await sourcingApi.createRun({
-        job_id: jobId,
-        platforms: platforms.filter(p => p !== 'linkedin'),
+        ...(selectedJobId ? { job_id: selectedJobId } : {}),
+        platforms: activePlatforms,
         criteria: {
           keywords:       query,
           location:       p.location       ?? undefined,
@@ -1393,32 +1131,72 @@ export default function SourcingPage() {
           skills:         p.skills.length  > 0 ? p.skills : undefined,
           experience_min: p.experience_min ?? undefined,
           industry:       p.industry       ?? undefined,
-          limit:          50,
+          limit:          20,
+          role_type:      roleType
         },
       })
       setRun(newRun)
 
-      // Poll until completed or failed (max 3 min)
+      // ── Single unified poll: fetch results + run status every 2 s.
+      // Results trickle in from the first batch commit (~5 candidates) so we
+      // show them immediately instead of waiting for the whole scrape to finish.
       let attempts = 0
-      const MAX = 36
+      const MAX_ATTEMPTS = 90          // 90 × 2 s = 3 min hard cap
+      const MAX_SCORE_WAITS = 60       // up to 2 extra min waiting for AI scores
+      let runDone = false
+      let scoreWaits = 0
+
       if (pollRef.current) clearInterval(pollRef.current)
       pollRef.current = setInterval(async () => {
         attempts++
         try {
-          const latest = await sourcingApi.getRun(newRun.id)
+          // Fetch results + run status in parallel every tick
+          const [latest, partial] = await Promise.all([
+            sourcingApi.getRun(newRun.id),
+            sourcingApi.getResults(newRun.id),
+          ])
+
+          // Show whatever candidates exist so far immediately
+          if (partial.length > 0) {
+            setResults(partial)
+            setPageState('results')   // switch out of searching as soon as 1 result arrives
+          }
           setRun(latest)
-          if (latest.status === 'completed' || latest.status === 'failed' || attempts >= MAX) {
+
+          const isDone = latest.status === 'completed' || latest.status === 'failed'
+          if (isDone) runDone = true
+
+          if (latest.status === 'failed') {
             clearInterval(pollRef.current!)
             pollRef.current = null
-            if (latest.status === 'completed') {
-              const res = await sourcingApi.getResults(newRun.id)
-              setResults(res)
-              // persist to search history
+            setError('Sourcing run failed. Please try again.')
+            if (partial.length === 0) setPageState('idle')
+            return
+          }
+
+          const allScored = partial.length > 0 && partial.every(r => r.ai_score != null)
+          const found = latest.candidates_found ?? partial.length
+          const countDone = found > 0 && (latest.candidates_scored ?? 0) >= found
+
+          // Stop when: run finished AND (all scored OR score timeout OR hard cap).
+          // Always do at least one extra tick after countDone so the final batch
+          // of scores (committed by the last screen_sourcing_result task) has time
+          // to be returned by getResults before we freeze the list.
+          const shouldStop = runDone && (allScored || scoreWaits >= MAX_SCORE_WAITS || attempts >= MAX_ATTEMPTS)
+          const countStopPending = runDone && countDone && !allScored
+
+          if (shouldStop || (countStopPending && scoreWaits >= 2)) {
+            // Do one final fetch to capture any scores committed in the last tick
+            try {
+              const finalResults = await sourcingApi.getResults(newRun.id)
+              if (finalResults.length > 0) setResults(finalResults)
+              clearInterval(pollRef.current!)
+              pollRef.current = null
               const entry: HistoryEntry = {
                 id: newRun.id,
                 query,
                 parsed: p,
-                results: res,
+                results: finalResults.length > 0 ? finalResults : partial,
                 run: latest,
                 timestamp: new Date().toISOString(),
               }
@@ -1427,17 +1205,21 @@ export default function SourcingPage() {
                 saveHistory(next)
                 return next
               })
-            } else if (latest.status === 'failed') {
-              setError('Sourcing run failed. Please try again.')
+            } catch {
+              clearInterval(pollRef.current!)
+              pollRef.current = null
             }
-            setPageState('results')
+            return
           }
+
+          if (runDone) scoreWaits++
+
         } catch {
           clearInterval(pollRef.current!)
           pollRef.current = null
           setPageState('results')
         }
-      }, 5000)
+      }, 2000)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong'
       setError(msg)
@@ -1449,13 +1231,28 @@ export default function SourcingPage() {
     setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
   const handleCandidateClick = (result: SourcingCandidate) => {
-    setActiveCandidate(prev => prev?.id === result.id ? null : result)
+    setActiveCandidateId(prev => prev === result.id ? null : result.id)
   }
 
-  const paginated   = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const totalPages  = Math.ceil(results.length / PAGE_SIZE)
+  const sortedResults = [...results].sort((a, b) => {
+    let av: number, bv: number
+    if (sortBy === 'ai_score') {
+      av = a.ai_score ?? -1
+      bv = b.ai_score ?? -1
+    } else if (sortBy === 'experience') {
+      av = a.candidate.experience ?? -1
+      bv = b.candidate.experience ?? -1
+    } else {
+      // name: alphabetical
+      return sortDir === 'asc'
+        ? (a.candidate.name ?? '').localeCompare(b.candidate.name ?? '')
+        : (b.candidate.name ?? '').localeCompare(a.candidate.name ?? '')
+    }
+    return sortDir === 'asc' ? av - bv : bv - av
+  })
+  const paginated   = sortedResults.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages  = Math.ceil(sortedResults.length / PAGE_SIZE)
   const detectedKeys = parsed?.detected ?? []
-  const criteriaCount = detectedKeys.length
 
   const toggleAll = () => {
     if (allSelected) { setSelected(new Set()); setAllSelected(false) }
@@ -1499,6 +1296,81 @@ export default function SourcingPage() {
     }
   }
 
+  const handleLoadMore = async () => {
+    if (!run || !parsed || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const activePlatforms = roleType === 'non_dev' ? ['linkedin'] : ['github']
+      const newRun = await sourcingApi.createRun({
+        platforms: activePlatforms,
+        criteria: {
+          keywords:       query,
+          location:       parsed.location       ?? undefined,
+          title:          parsed.job_title      ?? undefined,
+          skills:         parsed.skills.length  > 0 ? parsed.skills : undefined,
+          experience_min: parsed.experience_min ?? undefined,
+          industry:       parsed.industry       ?? undefined,
+          limit:          20,
+          role_type:      roleType,
+        },
+      })
+
+      const existingIds = new Set(results.map(r => r.candidate_id ?? r.candidate?.id ?? r.id))
+      let attempts = 0
+      const MAX = 90
+
+      if (loadMorePollRef.current) clearInterval(loadMorePollRef.current)
+      loadMorePollRef.current = setInterval(async () => {
+        attempts++
+        try {
+          const [latest, partial] = await Promise.all([
+            sourcingApi.getRun(newRun.id),
+            sourcingApi.getResults(newRun.id),
+          ])
+          const fresh = partial.filter(r => !existingIds.has(r.candidate_id ?? r.candidate?.id ?? r.id))
+          if (fresh.length > 0) {
+            setResults(prev => {
+              const prevIds = new Set(prev.map(r => r.candidate_id ?? r.candidate?.id ?? r.id))
+              return [...prev, ...fresh.filter(r => !prevIds.has(r.candidate_id ?? r.candidate?.id ?? r.id))]
+            })
+          }
+          const done = latest.status === 'completed' || latest.status === 'failed'
+          // Stop as soon as the backend run is done — don't hold the spinner
+          // waiting for AI scores; they'll stream in via the "Scoring…" badge
+          // just like the main search does.
+          if (done || attempts >= MAX) {
+            clearInterval(loadMorePollRef.current!)
+            loadMorePollRef.current = null
+            setLoadingMore(false)
+          }
+        } catch {
+          clearInterval(loadMorePollRef.current!)
+          loadMorePollRef.current = null
+          setLoadingMore(false)
+        }
+      }, 2000)
+    } catch {
+      setLoadingMore(false)
+    }
+  }
+
+  const handleCancelSearch = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    setPageState('idle')
+    setResults([])
+    setRun(null)
+    setError(null)
+  }
+
+  const handleClearHistory = () => {
+    setHistory([])
+    setActiveHistoryId(null)
+    saveHistory([])
+  }
+
   // ── IDLE / SEARCHING ────────────────────────────────────────────────────────
   if (pageState === 'idle' || (pageState as string) === 'searching') {
     return (
@@ -1514,37 +1386,24 @@ export default function SourcingPage() {
             Hey {firstName}, who are you looking for?
           </h1>
 
-          {/* Mode pills */}
-          <div className="flex gap-2 mb-6 flex-wrap justify-center">
+          {/* Role type toggle — dev vs non-dev */}
+          <div className="flex items-center gap-2 mb-5 p-1 bg-neutral-100 rounded-xl w-fit self-center">
             {([
-              {
-                id: 'similar', label: 'Find Similar',
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-violet-500"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
-              },
-              {
-                id: 'description', label: 'Job Description',
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
-              },
-              {
-                id: 'boolean', label: 'Boolean',
-                icon: <span className="text-[12px] font-semibold text-emerald-500 leading-none">Σ</span>,
-              },
-              {
-                id: 'manual', label: 'Select Manually',
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-500"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>,
-              },
-            ] as const).map(m => (
+              { id: 'dev',     label: 'Tech / Dev',     desc: 'Engineers, Data Scientists, DevOps' },
+              { id: 'non_dev', label: 'Business / Other', desc: 'Sales, Marketing, Finance, HR, Design' },
+            ] as const).map(rt => (
               <button
-                key={m.id}
-                onClick={() => setMode(m.id as SearchMode)}
+                key={rt.id}
+                onClick={() => setRoleType(rt.id)}
                 className={cn(
-                  'flex items-center gap-1.5 px-4 py-1.5 rounded-lg border text-xs transition-all',
-                  mode === m.id
-                    ? 'border-neutral-300 bg-white text-neutral-800 shadow-sm'
-                    : 'border-neutral-200 bg-white text-neutral-400 hover:text-neutral-700 hover:border-neutral-300'
+                  'flex flex-col items-start px-4 py-2 rounded-lg text-left transition-all',
+                  roleType === rt.id
+                    ? 'bg-white shadow-sm text-neutral-900'
+                    : 'text-neutral-500 hover:text-neutral-700'
                 )}
               >
-                {m.icon}{m.label}
+                <span className="text-[12px] font-semibold leading-tight">{rt.label}</span>
+                <span className="text-[10px] mt-0.5 leading-tight">{rt.desc}</span>
               </button>
             ))}
           </div>
@@ -1561,11 +1420,11 @@ export default function SourcingPage() {
                   onChange={e => setQuery(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSearch()}
                   placeholder={
-                    mode === 'similar'
-                      ? 'Software Engineers with 5+ yrs of experience at fintech companies in the Bay Area'
-                      : mode === 'boolean'
-                      ? '("Software Engineer" OR "SWE") AND Python AND "Bay Area"'
-                      : 'Paste a job description or describe the role…'
+                    mode === 'boolean'
+                      ? '("Marketing Manager" OR "Head of Sales") AND "B2B" AND London'
+                      : roleType === 'non_dev'
+                      ? 'Senior Sales Manager in London with 5+ years B2B SaaS experience'
+                      : 'Software Engineers with 5+ yrs of experience at fintech companies in the Bay Area'
                   }
                   className="w-full text-sm bg-transparent outline-none ring-0 focus:outline-none focus:ring-0 text-neutral-700 placeholder:text-neutral-400"
                 />
@@ -1643,9 +1502,17 @@ export default function SourcingPage() {
           {/* Search history pills */}
           {history.length > 0 && (
             <div className="mt-4 w-full">
-              <div className="flex items-center gap-2 mb-2">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                <span className="text-[11px] font-medium text-neutral-400 uppercase tracking-wide">Recent Searches</span>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <span className="text-[11px] font-medium text-neutral-400 uppercase tracking-wide">Recent Searches</span>
+                </div>
+                <button
+                  onClick={handleClearHistory}
+                  className="text-[11px] text-neutral-400 hover:text-red-500 transition-colors"
+                >
+                  Clear history
+                </button>
               </div>
               <div className="flex flex-col gap-1.5">
                 {history.map(entry => (
@@ -1673,6 +1540,17 @@ export default function SourcingPage() {
             </div>
           )}
 
+          {/* Cancel search button — only shown while a search is in progress */}
+          {(pageState as string) === 'searching' && (
+            <button
+              onClick={handleCancelSearch}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-neutral-200 bg-white text-[12px] font-medium text-neutral-600 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm"
+            >
+              <X size={12} />
+              Cancel Search
+            </button>
+          )}
+
           {error && <p className="text-xs text-red-500 mt-3">{error}</p>}
         </motion.div>
       </div>
@@ -1680,35 +1558,103 @@ export default function SourcingPage() {
   }
 
   // ── RESULTS ──────────────────────────────────────────────────────────────
+  const SORT_LABELS: Record<string, string> = { ai_score: 'AI Score', name: 'Name', experience: 'Experience' }
+
   return (
     <div className="space-y-0 mt-2">
+      {/* Sort / Filter Modal */}
+      <AnimatePresence>
+        {showSortModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/20 backdrop-blur-[2px]"
+              onClick={() => setShowSortModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="relative bg-white rounded-2xl border border-neutral-200 shadow-xl w-full max-w-xs mx-4 overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+                <h2 className="text-[13px] font-semibold text-neutral-900">Sort Results</h2>
+                <button onClick={() => setShowSortModal(false)} className="text-neutral-400 hover:text-neutral-600 transition-colors">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="p-4 space-y-2">
+                {(['ai_score', 'name', 'experience'] as const).map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => { setSortBy(opt); if (opt === sortBy) setSortDir(d => d === 'asc' ? 'desc' : 'asc') }}
+                    className={cn(
+                      'w-full flex items-center justify-between px-4 py-3 rounded-xl border text-[13px] transition-all',
+                      sortBy === opt
+                        ? 'border-violet-400 bg-violet-50 text-violet-900 font-medium'
+                        : 'border-neutral-200 text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50'
+                    )}
+                  >
+                    <span>{SORT_LABELS[opt]}</span>
+                    {sortBy === opt && (
+                      <span className="text-[11px] text-violet-500 font-semibold">
+                        {sortDir === 'desc' ? '↓ High → Low' : '↑ Low → High'}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <div className="px-4 pb-4">
+                <button
+                  onClick={() => setShowSortModal(false)}
+                  className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-[13px] font-medium transition-colors"
+                >
+                  Apply
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Search bar row */}
       <div className="flex items-center gap-2.5 pb-4">
+        {/* Back button */}
+        <button
+          onClick={() => { setPageState('idle'); setRun(null); setResults([]); setActiveCandidateId(null) }}
+          className="p-2 rounded-xl border border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 shadow-sm transition-colors flex-shrink-0"
+          title="Back to search"
+        >
+          <ArrowLeft size={15} />
+        </button>
+
         <div className="flex-1 flex items-center gap-3 bg-white border border-neutral-200 rounded-2xl px-4 py-2.5 shadow-sm min-w-0">
           <div className="w-7 h-7 rounded-full bg-neutral-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
             <span className="text-[11px] font-semibold text-neutral-600">{firstName[0]}</span>
           </div>
           <span className="text-[13px] text-neutral-700 truncate flex-1">{query}</span>
-          <button onClick={() => { setPageState('idle'); setRun(null); setResults([]); setActiveCandidate(null) }}
+          <button onClick={() => { setPageState('idle'); setRun(null); setResults([]); setActiveCandidateId(null) }}
             className="text-neutral-400 hover:text-neutral-600 flex-shrink-0 transition-colors">
             <X size={14} />
           </button>
         </div>
 
-        <button className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-[13px] text-neutral-700 hover:bg-neutral-50 shadow-sm flex-shrink-0 font-medium transition-colors">
-          <Filter size={13} className="text-neutral-500" />
-          Filters
-          <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold flex items-center justify-center">4</span>
-        </button>
-
-        <button className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-[13px] text-neutral-700 hover:bg-neutral-50 shadow-sm flex-shrink-0 font-medium transition-colors">
-          <Diamond size={13} className="text-neutral-500" />
-          Criteria
-          {criteriaCount > 0 && (
-            <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold flex items-center justify-center">
-              {criteriaCount}
-            </span>
+        <button
+          onClick={() => setShowSortModal(true)}
+          className={cn(
+            'inline-flex items-center gap-2 px-3.5 py-2.5 bg-white border rounded-xl text-[13px] text-neutral-700 hover:bg-neutral-50 shadow-sm flex-shrink-0 font-medium transition-colors',
+            sortBy !== 'ai_score' ? 'border-violet-300 text-violet-700' : 'border-neutral-200'
           )}
+        >
+          <Filter size={13} className={sortBy !== 'ai_score' ? 'text-violet-500' : 'text-neutral-500'} />
+          Sort
+          <span className={cn(
+            'w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center',
+            sortBy !== 'ai_score' ? 'bg-violet-100 text-violet-700' : 'bg-neutral-100 text-neutral-500'
+          )}>
+            {sortDir === 'desc' ? '↓' : '↑'}
+          </span>
         </button>
       </div>
 
@@ -1761,21 +1707,29 @@ export default function SourcingPage() {
               </button>
             </div>
 
-            {selected.size > 0 && (
+            {selected.size > 0 && (  
               <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-[12px] font-medium text-neutral-700 hover:bg-neutral-50 transition-colors">
                 <BookMarked size={12} />
                 Review ({selected.size})
               </button>
             )}
 
-            {(pageState as string) === 'searching' && (
+            {run && run.status !== 'completed' && run.status !== 'failed' && (
               <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">
                 <Loader2 size={11} className="animate-spin" />
-                Searching…
+                {results.length > 0
+                  ? `Found ${results.length} so far…`
+                  : 'Searching…'}
               </span>
             )}
-            {pageState === 'results' && run?.status === 'completed' && (
+            {run?.status === 'completed' && results.every(r => r.ai_score != null) && (
               <span className="text-xs text-emerald-600 font-medium">✓ Done</span>
+            )}
+            {run?.status === 'completed' && !results.every(r => r.ai_score != null) && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-amber-500">
+                <Loader2 size={11} className="animate-spin" />
+                Scoring {results.filter(r => r.ai_score != null).length}/{results.length}…
+              </span>
             )}
           </div>
 
@@ -1859,8 +1813,7 @@ export default function SourcingPage() {
                         <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[22%]">Title</th>
                         <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[17%]">Company</th>
                         <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[14%]">Shortlist</th>
-                        <th className="px-2 py-2 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[8%]">Match</th>
-                        <th className="px-2 py-2 pr-3 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[8%]">Exp</th>
+                        <th className="px-2 py-2 pr-3 text-left text-[10px] font-semibold text-neutral-500 uppercase tracking-wide w-[16%]">Score</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1917,6 +1870,22 @@ export default function SourcingPage() {
               </button>
             </div>
           )}
+
+          {tab === 'results' && run?.status === 'completed' && (
+            <div className="flex justify-center pt-3 pb-1">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-neutral-200 bg-white text-[13px] font-medium text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 shadow-sm transition-colors disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <><Loader2 size={13} className="animate-spin" />Finding more candidates…</>
+                ) : (
+                  <><Users size={13} className="text-neutral-400" />Load More Candidates</>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Candidate detail panel ── */}
@@ -1924,7 +1893,7 @@ export default function SourcingPage() {
           {activeCandidate && (
             <CandidatePanel
               result={activeCandidate}
-              onClose={() => setActiveCandidate(null)}
+              onClose={() => setActiveCandidateId(null)}
               onShortlist={handleShortlist}
               shortlistState={shortlistState}
             />

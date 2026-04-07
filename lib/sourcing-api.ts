@@ -10,7 +10,7 @@ export interface ParsedQuery {
 }
 
 export interface SourcingRunCreate {
-  job_id: string
+  job_id?: string
   platforms: string[]
   criteria: {
     keywords: string
@@ -20,6 +20,7 @@ export interface SourcingRunCreate {
     experience_min?: number
     industry?: string
     limit?: number
+    role_type?: 'dev' | 'non_dev'
   }
 }
 
@@ -40,12 +41,14 @@ export interface RawExperience {
   title: string
   company: string
   date?: string
+  logo_url?: string
 }
 
 export interface RawEducation {
   degree: string
   school: string
   date?: string
+  logo_url?: string
 }
 
 export interface RawSkillSection {
@@ -84,6 +87,12 @@ export interface SourcingCandidate {
       educations?: RawEducation[]
       skill_sections?: RawSkillSection[]
       tags?: string[]
+      experience_years?: number
+      courses?: { title: string; subtitle?: string }[]
+      certifications?: { title: string; issuer?: string; date?: string; credential_url?: string }[]
+      publications?: { title: string; publisher?: string; date?: string; description?: string }[]
+      projects?: { title: string; date?: string; description?: string }[]
+      recommendations?: string[]
       company_logo?: string
       top_repos?: { name: string; stars: number; language: string; url: string }[]
       [key: string]: unknown

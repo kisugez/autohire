@@ -410,6 +410,7 @@ function IntegrationsContent() {
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false })
   const [googleLoading, setGoogleLoading] = useState(true)
   const [connectingGmail, setConnectingGmail] = useState(false)
+  const [disconnectingGmail, setDisconnectingGmail] = useState(false)
 
   const [integrations, setIntegrations] = useState<PlatformIntegration[]>([])
   const [intLoading, setIntLoading] = useState(true)
@@ -422,7 +423,6 @@ function IntegrationsContent() {
 
   // LinkedIn verification banner — polls backend every 3 s
   const [liVerifyNeeded, setLiVerifyNeeded] = useState(false)
-  const liPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
 
   const showToast = (msg: string, ok = true) => {
@@ -480,6 +480,19 @@ function IntegrationsContent() {
     } catch {
       showToast('Failed to start Gmail OAuth.', false)
       setConnectingGmail(false)
+    }
+  }
+
+  const disconnectGmail = async () => {
+    setDisconnectingGmail(true)
+    try {
+      await del('/api/v1/google/gmail/disconnect')
+      setGoogleStatus(s => ({ ...s, gmail_connected: false, gmail_email: undefined }))
+      showToast('Gmail disconnected.', true)
+    } catch {
+      showToast('Failed to disconnect Gmail. Try again.', false)
+    } finally {
+      setDisconnectingGmail(false)
     }
   }
 
@@ -679,7 +692,12 @@ function IntegrationsContent() {
               </span>
               <div>
                 {googleStatus.gmail_connected ? (
-                  <button className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-neutral-200 text-red-500 hover:bg-red-50 hover:border-red-200 transition-colors">
+                  <button
+                    onClick={disconnectGmail}
+                    disabled={disconnectingGmail}
+                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                  >
+                    {disconnectingGmail ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
                     Disconnect
                   </button>
                 ) : (
