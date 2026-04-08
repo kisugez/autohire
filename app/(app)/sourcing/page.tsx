@@ -24,14 +24,6 @@ type SearchMode = 'similar' | 'description' | 'boolean' | 'manual'
 type ViewMode   = 'card' | 'list'
 type RoleType   = 'dev' | 'non_dev'
 
-const SUGGESTIONS = [
-  'Software Engineers in SF working at Series B companies, skilled in Python and Node.js',
-  'Marketing Manager in Europe, German-speaking, working at a large enterprise',
-  'Senior Scientist in Australia, 8+ years experience',
-  'Consultant in London with 2+ years experience at top consulting firms',
-  'Sales Manager in Dallas with experience in ERP',
-]
-
 const CRITERIA_DISPLAY = [
   { key: 'location',   label: 'Location' },
   { key: 'job_title',  label: 'Job Title' },
@@ -1278,17 +1270,6 @@ export default function SourcingPage() {
                 )}
               </AnimatePresence>
             </div>
-
-            <AnimatePresence>
-              {focused && !query.trim() && (
-                <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }}
-                  className="absolute left-0 right-0 mt-2 bg-white rounded-2xl border border-neutral-200 shadow-md overflow-hidden z-10">
-                  {SUGGESTIONS.map((s, i) => (
-                    <button key={i} onMouseDown={() => setQuery(s)} className="w-full text-left px-5 py-3 text-sm text-neutral-600 hover:bg-neutral-50 transition-colors border-b border-neutral-100 last:border-0">{s}</button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
 
           {/* History */}
