@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
   Plus, MapPin, Loader2, AlertCircle, MoreHorizontal,
-  Pencil, Archive, Link2, Check, Heart, Share2,
+  Pencil, Archive, Link2, Check, Share2,
   Briefcase, Clock, ChevronRight, Users, CheckCircle2,
   UserCheck, FileText, ListChecks, MessageSquare,
-  Gift, SkipForward,
+  Gift, SkipForward, SortDesc, SlidersHorizontal, X,
 } from 'lucide-react'
 import StatusBadge from '@/components/cards/status-badge'
 import SearchInput from '@/components/cards/search-input'
@@ -96,23 +96,54 @@ export default function JobsPage() {
   const [archiving,   setArchiving]   = useState<string | null>(null)
   const [linkLoading, setLinkLoading] = useState<string | null>(null)
   const [copiedId,    setCopiedId]    = useState<string | null>(null)
-  const [liked,       setLiked]       = useState<Set<string>>(new Set())
+  const [dateSort,     setDateSort]     = useState<'newest' | 'oldest'>('newest')
+  const [dateSortOpen, setDateSortOpen] = useState(false)
+  const [filterOpen,   setFilterOpen]   = useState(false)
+  const [filterType,   setFilterType]   = useState<string>('')
+  const [filterRemote, setFilterRemote] = useState<boolean | null>(null)
+
+  const dateSortRef = useRef<HTMLDivElement>(null)
+  const filterRef   = useRef<HTMLDivElement>(null)
+
   const [appsByJob,   setAppsByJob]   = useState<Record<string, ApiApplication[]>>({})
   const [appsLoading, setAppsLoading] = useState(false)
+  const [statsByJob,  setStatsByJob]  = useState<Record<string, { openings: number; hired_count: number; available: number }>>({})
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dateSortRef.current && !dateSortRef.current.contains(e.target as Node)) setDateSortOpen(false)
+      if (filterRef.current   && !filterRef.current.contains(e.target as Node))   setFilterOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   useEffect(() => {
     if (!jobs.length || appsLoading) return
     setAppsLoading(true)
-    Promise.all(
-      jobs.map(j =>
-        get<ApiApplication[]>(`/api/v1/applications/job/${j.id}`)
-          .then(apps => ({ id: j.id, apps }))
-          .catch(() => ({ id: j.id, apps: [] as ApiApplication[] }))
-      )
-    ).then(results => {
-      const map: Record<string, ApiApplication[]> = {}
-      results.forEach(r => { map[r.id] = r.apps })
-      setAppsByJob(map)
+    Promise.all([
+      Promise.all(
+        jobs.map(j =>
+          get<ApiApplication[]>(`/api/v1/applications/job/${j.id}`)
+            .then(apps => ({ id: j.id, apps }))
+            .catch(() => ({ id: j.id, apps: [] as ApiApplication[] }))
+        )
+      ),
+      Promise.all(
+        jobs.map(j =>
+          get<{ openings: number; hired_count: number; available: number }>(`/api/v1/jobs/${j.id}/stats`)
+            .then(stats => ({ id: j.id, stats }))
+            .catch(() => ({ id: j.id, stats: { openings: j.openings ?? 1, hired_count: 0, available: j.openings ?? 1 } }))
+        )
+      ),
+    ]).then(([appResults, statsResults]) => {
+      const appMap: Record<string, ApiApplication[]> = {}
+      appResults.forEach(r => { appMap[r.id] = r.apps })
+      setAppsByJob(appMap)
+
+      const statsMap: Record<string, { openings: number; hired_count: number; available: number }> = {}
+      statsResults.forEach(r => { statsMap[r.id] = r.stats })
+      setStatsByJob(statsMap)
     }).finally(() => setAppsLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs])
@@ -125,19 +156,31 @@ export default function JobsPage() {
     'Closed': jobs.filter(j => j.status === 'closed').length,
   }
 
-  const filtered = jobs.filter(job => {
-    const q = search.toLowerCase()
-    const matchSearch = job.title.toLowerCase().includes(q) ||
-                        (job.department ?? '').toLowerCase().includes(q)
-    const matchTab =
-      activeTab === 'All'    ? true :
-      activeTab === 'Active' ? job.status === 'active' :
-      activeTab === 'Draft'  ? job.status === 'draft'  :
-      activeTab === 'Paused' ? job.status === 'paused' :
-      activeTab === 'Closed' ? job.status === 'closed' :
-      true
-    return matchSearch && matchTab
-  })
+  const activeFilterCount = [filterType, filterRemote !== null ? 'remote' : ''].filter(Boolean).length
+
+  const filtered = jobs
+    .filter(job => {
+      const q = search.toLowerCase()
+      const matchSearch = job.title.toLowerCase().includes(q) ||
+                          (job.department ?? '').toLowerCase().includes(q)
+      const matchTab =
+        activeTab === 'All'    ? true :
+        activeTab === 'Active' ? job.status === 'active' :
+        activeTab === 'Draft'  ? job.status === 'draft'  :
+        activeTab === 'Paused' ? job.status === 'paused' :
+        activeTab === 'Closed' ? job.status === 'closed' :
+        true
+      const matchType   = filterType   ? job.job_type === filterType : true
+      const matchRemote = filterRemote !== null ? !!job.remote === filterRemote : true
+      return matchSearch && matchTab && matchType && matchRemote
+    })
+    .sort((a, b) => {
+      const da = new Date(a.created_at).getTime()
+      const db = new Date(b.created_at).getTime()
+      return dateSort === 'newest' ? db - da : da - db
+    })
+
+  const clearFilters = () => { setFilterType(''); setFilterRemote(null) }
 
   const openEdit = (job: ApiJob) => { setEditJob(job); setModalOpen(true); setMenuOpen(null) }
 
@@ -161,9 +204,6 @@ export default function JobsPage() {
     } catch { /* silent */ } finally { setLinkLoading(null) }
   }
 
-  const toggleLike = (id: string) =>
-    setLiked(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
-
   const getPipeline = (job: ApiJob) => {
     const jobApps = appsByJob[job.id] ?? []
     const count   = (stage: string) => jobApps.filter(a => a.current_stage === stage).length
@@ -177,10 +217,11 @@ export default function JobsPage() {
     }
   }
 
-  const getAvailable = (job: ApiJob) => ({
-    filled: (job as any).positions_filled ?? 3,
-    total:  (job as any).positions_total  ?? 10,
-  })
+  const getAvailable = (job: ApiJob) => {
+    const s = statsByJob[job.id]
+    if (s) return { filled: s.hired_count, total: s.openings }
+    return { filled: 0, total: job.openings ?? 1 }
+  }
 
   return (
     <div className="space-y-3 px-2 pt-3">
@@ -223,12 +264,125 @@ export default function JobsPage() {
         {/* right controls */}
         <div className="flex items-center gap-1.5 ml-auto">
           <SearchInput value={search} onChange={setSearch} placeholder="Search…" className="w-44" />
-          <button className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
-            <Clock className="w-3 h-3" /> Date added
-          </button>
-          <button className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
-            Filter
-          </button>
+          {/* Date sort dropdown */}
+          <div className="relative" ref={dateSortRef}>
+            <button
+              onClick={() => { setDateSortOpen(o => !o); setFilterOpen(false) }}
+              className={cn(
+                'flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-lg transition-colors',
+                dateSortOpen || dateSort === 'oldest'
+                  ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                  : 'text-neutral-600 border-neutral-200 hover:bg-neutral-50',
+              )}
+            >
+              <SortDesc className="w-3 h-3" />
+              {dateSort === 'newest' ? 'Newest first' : 'Oldest first'}
+            </button>
+            <AnimatePresence>
+              {dateSortOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.12 }}
+                  className="absolute right-0 top-8 z-30 bg-white border border-neutral-200 rounded-lg shadow-lg py-1 w-36"
+                >
+                  {(['newest', 'oldest'] as const).map(opt => (
+                    <button
+                      key={opt}
+                      onClick={() => { setDateSort(opt); setDateSortOpen(false) }}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors',
+                        dateSort === opt
+                          ? 'text-indigo-600 bg-indigo-50 font-semibold'
+                          : 'text-neutral-700 hover:bg-neutral-50',
+                      )}
+                    >
+                      {dateSort === opt && <Check className="w-3 h-3 flex-shrink-0" />}
+                      <span className={dateSort === opt ? '' : 'ml-[14px]'}>
+                        {opt === 'newest' ? 'Newest first' : 'Oldest first'}
+                      </span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Filter dropdown */}
+          <div className="relative" ref={filterRef}>
+            <button
+              onClick={() => { setFilterOpen(o => !o); setDateSortOpen(false) }}
+              className={cn(
+                'flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-lg transition-colors',
+                filterOpen || activeFilterCount > 0
+                  ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                  : 'text-neutral-600 border-neutral-200 hover:bg-neutral-50',
+              )}
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+              Filter
+              {activeFilterCount > 0 && (
+                <span className="bg-indigo-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+            <AnimatePresence>
+              {filterOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.12 }}
+                  className="absolute right-0 top-8 z-30 bg-white border border-neutral-200 rounded-xl shadow-lg p-3 w-52 space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-neutral-700">Filters</span>
+                    {activeFilterCount > 0 && (
+                      <button onClick={clearFilters} className="text-[10px] text-red-500 hover:text-red-600 flex items-center gap-0.5">
+                        <X className="w-2.5 h-2.5" /> Clear all
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide mb-1.5">Job Type</p>
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(JOB_TYPE_LABEL).map(([val, label]) => (
+                        <button
+                          key={val}
+                          onClick={() => setFilterType(filterType === val ? '' : val)}
+                          className={cn(
+                            'text-[11px] px-2 py-0.5 rounded-md border transition-colors',
+                            filterType === val
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'text-neutral-600 border-neutral-200 hover:border-indigo-300',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide mb-1.5">Work Mode</p>
+                    <div className="flex gap-1">
+                      {([['Remote', true], ['On-site', false]] as [string, boolean][]).map(([label, val]) => (
+                        <button
+                          key={label}
+                          onClick={() => setFilterRemote(filterRemote === val ? null : val)}
+                          className={cn(
+                            'text-[11px] px-2 py-0.5 rounded-md border transition-colors',
+                            filterRemote === val
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'text-neutral-600 border-neutral-200 hover:border-indigo-300',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
           <button
             onClick={() => { setEditJob(null); setModalOpen(true) }}
             className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
@@ -237,6 +391,24 @@ export default function JobsPage() {
           </button>
         </div>
       </div>
+
+      {/* ── active filter chips ── */}
+      {activeFilterCount > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {filterType && (
+            <span className="flex items-center gap-1 text-[11px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full">
+              {JOB_TYPE_LABEL[filterType]}
+              <button onClick={() => setFilterType('')}><X className="w-2.5 h-2.5" /></button>
+            </span>
+          )}
+          {filterRemote !== null && (
+            <span className="flex items-center gap-1 text-[11px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full">
+              {filterRemote ? 'Remote' : 'On-site'}
+              <button onClick={() => setFilterRemote(null)}><X className="w-2.5 h-2.5" /></button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── error ── */}
       {error && (
@@ -270,7 +442,6 @@ export default function JobsPage() {
               const pipeline  = getPipeline(job)
               const available = getAvailable(job)
               const statusCfg = STATUS_LABEL[job.status] ?? STATUS_LABEL.draft
-              const isLiked   = liked.has(job.id)
               const isCopied  = copiedId === job.id
               const isLinking = linkLoading === job.id
 
@@ -342,17 +513,6 @@ export default function JobsPage() {
                       <span className="text-neutral-400 text-[11px] whitespace-nowrap">
                         Added at <span className="font-medium text-neutral-600">{formatDate(job.created_at)}</span>
                       </span>
-
-                      {/* like */}
-                      <button
-                        onClick={() => toggleLike(job.id)}
-                        className={cn(
-                          'w-6 h-6 flex items-center justify-center rounded transition-colors',
-                          isLiked ? 'text-rose-500 bg-rose-50' : 'text-neutral-300 hover:text-rose-400 hover:bg-rose-50',
-                        )}
-                      >
-                        <Heart className="w-3 h-3" fill={isLiked ? 'currentColor' : 'none'} />
-                      </button>
 
                       {/* three-dot */}
                       <div className="relative">

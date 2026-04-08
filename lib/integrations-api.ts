@@ -26,6 +26,13 @@ export const integrationsApi = {
   list: () =>
     get<PlatformIntegration[]>('/api/v1/integrations'),
 
+  verify: (data: { platform: string; email: string; password: string }) =>
+    post<{ ok: boolean; detail?: string | null }>(
+      '/api/v1/integrations/connect/verify',
+      data,
+      { timeout: 60_000 }, // Playwright browser login takes 20-30s
+    ),
+
   connect: (data: ConnectRequest) =>
     post<PlatformIntegration>('/api/v1/integrations/connect', data),
 

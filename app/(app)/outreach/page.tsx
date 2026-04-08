@@ -44,6 +44,8 @@ interface GoogleStatus {
   gmail_connected: boolean
   gmail_email?: string
   gcal_connected: boolean
+  outlook_connected: boolean
+  outlook_email?: string
 }
 
 interface ApiCandidate {
@@ -326,6 +328,54 @@ function TemplatePicker({ templates, loading, selected, onSelect }: {
 }
 
 
+
+// ─── Provider Picker ─────────────────────────────────────────────
+
+function ProviderPicker({
+  value,
+  onChange,
+  gmailConnected,
+  outlookConnected,
+}: {
+  value: 'gmail' | 'outlook'
+  onChange: (v: 'gmail' | 'outlook') => void
+  gmailConnected: boolean
+  outlookConnected: boolean
+}) {
+  if (!gmailConnected || !outlookConnected) return null
+  return (
+    <div className="flex items-center gap-0.5 bg-neutral-100 rounded-lg p-0.5">
+      <button
+        onClick={() => onChange('gmail')}
+        className={cn(
+          'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all',
+          value === 'gmail' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
+        )}
+      >
+        <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none">
+          <path d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6z" fill="#fff" stroke="#e0e0e0" strokeWidth="1"/>
+          <path d="M22 6l-10 7L2 6" stroke="#EA4335" strokeWidth="1.5" fill="none"/>
+        </svg>
+        Gmail
+      </button>
+      <button
+        onClick={() => onChange('outlook')}
+        className={cn(
+          'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all',
+          value === 'outlook' ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
+        )}
+      >
+        <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none">
+          <rect width="16" height="16" rx="2" fill="#0078D4"/>
+          <path d="M9 4h4.5v8H9V4z" fill="#50B1F8"/>
+          <rect x="2.5" y="5" width="5.5" height="6" rx="0.5" fill="white"/>
+        </svg>
+        Outlook
+      </button>
+    </div>
+  )
+}
+
 function ComposeModal({ target, googleStatus, onClose, onSent }: {
   target: ComposeTarget
   googleStatus: GoogleStatus
@@ -341,6 +391,8 @@ function ComposeModal({ target, googleStatus, onClose, onSent }: {
   const [selectedTpl, setSelectedTpl] = useState<OutreachTemplate | null>(null)
   const [aiLoading, setAiLoading]     = useState(false)
   const [aiDone, setAiDone]           = useState(false)
+  const defaultProvider = googleStatus.gmail_connected ? 'gmail' : googleStatus.outlook_connected ? 'outlook' : 'gmail'
+  const [provider, setProvider]       = useState<'gmail' | 'outlook'>(defaultProvider)
 
   useEffect(() => {
     setTplLoading(true)
@@ -381,9 +433,9 @@ function ComposeModal({ target, googleStatus, onClose, onSent }: {
     if (!subject.trim() || !body.trim()) return
     setSending(true); setError(null)
     try {
-      await post('/api/v1/outreach/send', { candidate_id: target.candidate_id, candidate_email: target.candidate_email, subject, body })
+      await post('/api/v1/outreach/send', { candidate_id: target.candidate_id, candidate_email: target.candidate_email, subject, body, provider })
       onSent()
-    } catch { setError('Failed to send. Check your Gmail connection.') }
+    } catch { setError(`Failed to send. Check your ${provider === 'outlook' ? 'Outlook' : 'Gmail'} connection.`) }
     finally { setSending(false) }
   }
 
@@ -403,10 +455,30 @@ function ComposeModal({ target, googleStatus, onClose, onSent }: {
               <p className="text-neutral-400 text-[11px]">{target.candidate_email}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors">
-            <X className="w-3.5 h-3.5 text-neutral-400" />
-          </button>
+          <div className="flex items-center gap-2">
+            <ProviderPicker
+              value={provider}
+              onChange={setProvider}
+              gmailConnected={googleStatus.gmail_connected}
+              outlookConnected={googleStatus.outlook_connected}
+            />
+            {!googleStatus.gmail_connected && googleStatus.outlook_connected && (
+              <span className="flex items-center gap-1 text-[10px] font-medium text-[#0078D4] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-lg">Outlook</span>
+            )}
+            {googleStatus.gmail_connected && !googleStatus.outlook_connected && (
+              <span className="flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-lg">Gmail</span>
+            )}
+            <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors">
+              <X className="w-3.5 h-3.5 text-neutral-400" />
+            </button>
+          </div>
         </div>
+        {!googleStatus.gmail_connected && !googleStatus.outlook_connected && (
+          <div className="mx-4 mt-3 flex items-center gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <AlertCircle className="w-3 h-3 flex-shrink-0" />
+            No email connected. <a href="/integrations" className="underline font-medium ml-1">Connect Gmail or Outlook</a>
+          </div>
+        )}
         <div className="px-4 py-3 space-y-2.5">
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-2.5">
             <span className="text-neutral-400 text-[11px] w-14 flex-shrink-0">Subject</span>
@@ -484,16 +556,7 @@ function ComposeModal({ target, googleStatus, onClose, onSent }: {
   )
 }
 
-function GmailIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none">
-      <path d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6z" fill="#fff" stroke="#e0e0e0" strokeWidth="1"/>
-      <path d="M22 6l-10 7L2 6" stroke="#EA4335" strokeWidth="1.5" fill="none"/>
-      <path d="M2 6l10 7" stroke="#34A853" strokeWidth="1" fill="none"/>
-      <path d="M22 6l-10 7" stroke="#FBBC05" strokeWidth="1" fill="none"/>
-    </svg>
-  )
-}
+
 
 // ─── Main Page ───────────────────────────────────────────────────
 
@@ -509,7 +572,7 @@ export default function OutreachPage() {
   const [convLoading, setConvLoading]     = useState(false)
   const [syncing, setSyncing]             = useState(false)
 
-  const [googleStatus, setGoogleStatus]   = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false })
+  const [googleStatus, setGoogleStatus]   = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false, outlook_connected: false })
 
   const [pickerOpen, setPickerOpen]       = useState(false)
   const [composeTarget, setComposeTarget] = useState<ComposeTarget | null>(null)
@@ -523,6 +586,7 @@ export default function OutreachPage() {
   const [replySelectedTpl, setReplySelectedTpl] = useState<OutreachTemplate | null>(null)
   const [replyAiLoading, setReplyAiLoading]     = useState(false)
   const [replyAiDone, setReplyAiDone]           = useState(false)
+  const [replyProvider, setReplyProvider]       = useState<'gmail' | 'outlook'>('gmail')
 
   const [allCandidates, setAllCandidates] = useState<ApiCandidate[]>([])
 
@@ -546,13 +610,14 @@ export default function OutreachPage() {
   const loadContacts = useCallback(async () => {
     setLoading(true)
     try {
-      const [msgs, gStatus, allC] = await Promise.all([
+      const [msgs, gStatus, outlookStatus, allC] = await Promise.all([
         get<ContactedCandidate[]>('/api/v1/outreach/messages').catch(() => [] as ContactedCandidate[]),
-        get<GoogleStatus>('/api/v1/google/status').catch(() => ({ gmail_connected: false, gcal_connected: false } as GoogleStatus)),
+        get<GoogleStatus>('/api/v1/google/status').catch(() => ({ gmail_connected: false, gcal_connected: false, outlook_connected: false } as GoogleStatus)),
+        get<{ outlook_connected: boolean; outlook_email?: string }>('/api/v1/outlook/status').catch(() => ({ outlook_connected: false, outlook_email: undefined })),
         get<ApiCandidate[]>('/api/v1/candidates').catch(() => [] as ApiCandidate[]),
       ])
       setContacts(msgs)
-      setGoogleStatus(gStatus)
+      setGoogleStatus({ ...gStatus, outlook_connected: outlookStatus.outlook_connected, outlook_email: outlookStatus.outlook_email })
       setAllCandidates(allC)
       if (msgs.length > 0 && !selected) setSelected(msgs[0])
     } finally {
@@ -563,8 +628,11 @@ export default function OutreachPage() {
   // Lightweight status re-check — only refreshes Gmail connection state
   const refreshGoogleStatus = useCallback(async () => {
     try {
-      const gStatus = await get<GoogleStatus>('/api/v1/google/status')
-      setGoogleStatus(gStatus)
+      const [gStatus, outlookStatus] = await Promise.all([
+        get<GoogleStatus>('/api/v1/google/status'),
+        get<{ outlook_connected: boolean; outlook_email?: string }>('/api/v1/outlook/status').catch(() => ({ outlook_connected: false, outlook_email: undefined })),
+      ])
+      setGoogleStatus({ ...gStatus, outlook_connected: outlookStatus.outlook_connected, outlook_email: outlookStatus.outlook_email })
     } catch {}
   }, [])
 
@@ -646,10 +714,10 @@ export default function OutreachPage() {
     if (!selected || !replyBody.trim() || !replySubject.trim()) return
     setSending(true); setSendError(null)
     try {
-      await post('/api/v1/outreach/send', { candidate_id: selected.candidate_id, candidate_email: selected.candidate_email, subject: replySubject, body: replyBody })
+      await post('/api/v1/outreach/send', { candidate_id: selected.candidate_id, candidate_email: selected.candidate_email, subject: replySubject, body: replyBody, provider: replyProvider })
       setReplyBody('')
       await fetchConversation(selected.candidate_id)
-    } catch { setSendError('Failed to send. Check your Gmail connection.') }
+    } catch { setSendError(`Failed to send. Check your ${replyProvider === 'outlook' ? 'Outlook' : 'Gmail'} connection.`) }
     finally { setSending(false) }
   }
 
@@ -880,13 +948,19 @@ export default function OutreachPage() {
                     <RefreshCw className={cn('w-3 h-3', syncing && 'animate-spin')} /> Sync
                   </button>
                 )}
-                {googleStatus.gmail_connected ? (
+                {googleStatus.gmail_connected && (
                   <span className="flex items-center gap-1 text-xs text-green-700 border border-green-200 bg-green-50 px-2.5 py-1.5 rounded-lg">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Gmail
                   </span>
-                ) : (
+                )}
+                {googleStatus.outlook_connected && (
+                  <span className="flex items-center gap-1 text-xs text-blue-700 border border-blue-200 bg-blue-50 px-2.5 py-1.5 rounded-lg">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0078D4]" /> Outlook
+                  </span>
+                )}
+                {!googleStatus.gmail_connected && !googleStatus.outlook_connected && (
                   <a href="/integrations" className="flex items-center gap-1.5 text-xs text-amber-700 border border-amber-200 bg-amber-50 px-2.5 py-1.5 rounded-lg">
-                    <AlertCircle className="w-3 h-3" /> Connect Gmail
+                    <AlertCircle className="w-3 h-3" /> Connect email
                   </a>
                 )}
               </div>
@@ -1003,8 +1077,14 @@ export default function OutreachPage() {
                         : <><Sparkles className="w-3 h-3" /> Generate with AI ✦</>}
                     </button>
                   </div>
-                  {/* Right: Send */}
+                  {/* Right: Provider picker + Send */}
                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <ProviderPicker
+                      value={replyProvider}
+                      onChange={setReplyProvider}
+                      gmailConnected={googleStatus.gmail_connected}
+                      outlookConnected={googleStatus.outlook_connected}
+                    />
                     <span className="text-[10px] text-neutral-300">⌘↵</span>
                     <button
                       onClick={sendReply}

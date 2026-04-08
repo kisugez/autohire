@@ -127,3 +127,32 @@
   outline: 2px solid #6366F1;
   outline-offset: 2px;
 }
+/* ── Apply page form classes ── */
+.inp {
+  width: 100%; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+  padding: 10px 14px 10px 36px; font-size: 13px; color: #111; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  font-family: 'Atyp', system-ui, sans-serif;
+}
+.inp:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+.inp:hover:not(:focus) { border-color: #d1d5db; }
+.inp::placeholder { color: #9ca3af; }
+.inp-bare {
+  width: 100%; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+  padding: 10px 14px; font-size: 13px; color: #111; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  font-family: 'Atyp', system-ui, sans-serif;
+}
+.inp-bare:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+.inp-bare:hover:not(:focus) { border-color: #d1d5db; }
+.inp-bare::placeholder { color: #9ca3af; }
+.pbtn {
+  width: 100%; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 500;
+  color: #fff; border: none; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; gap: 7px; background: #7c3aed;
+  transition: background .15s, transform .1s;
+  font-family: 'Atyp', system-ui, sans-serif;
+}
+.pbtn:hover { background: #6d28d9; transform: translateY(-1px); }
+.pbtn:active { transform: translateY(0); }
+.pbtn:disabled { opacity: .5; cursor: not-allowed; transform: none; }

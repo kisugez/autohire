@@ -82,6 +82,7 @@ export interface ApiCandidate {
   avatar_url: string | null
   gender: string | null
   location_flag: string | null
+  raw_profile: { photo_url?: string | null; [key: string]: unknown } | null
   created_at: string
   updated_at: string
 }

@@ -3,8 +3,10 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import {
-  MapPin, Briefcase, Clock, DollarSign, Wifi, CheckCircle2,
+  MapPin, Briefcase, DollarSign, Wifi, CheckCircle2,
   Loader2, AlertCircle, Upload, X, Building2, ArrowRight,
+  ArrowLeft, User, Mail, Phone, Globe, Github, Linkedin,
+  FileText,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -37,18 +39,31 @@ function fmt(n: number) {
   return n >= 1000 ? `$${(n / 1000).toFixed(0)}k` : `$${n}`
 }
 
+const STEPS = [
+  { number: 1, label: 'Personal Info' },
+  { number: 2, label: 'Profile Links' },
+  { number: 3, label: 'Your CV' },
+]
+
 export default function PublicJobPage() {
   const { slug } = useParams<{ slug: string }>()
 
-  const [job, setJob]         = useState<JobForm | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [job, setJob]           = useState<JobForm | null>(null)
+  const [loading, setLoading]   = useState(true)
   const [notFound, setNotFound] = useState(false)
 
-  const [values, setValues]   = useState<Record<string, string>>({})
-  const [cvFile, setCvFile]   = useState<File | null>(null)
+  const [step, setStep] = useState(1)
+
+  const [firstName, setFirstName] = useState('')
+  const [lastName,  setLastName]  = useState('')
+  const [gender,    setGender]    = useState<'male' | 'female' | 'other' | ''>('')
+
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [cvFile, setCvFile] = useState<File | null>(null)
+
   const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted]   = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [submitted,  setSubmitted]  = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -61,57 +76,44 @@ export default function PublicJobPage() {
 
   const set = (id: string, v: string) => setValues(p => ({ ...p, [id]: v }))
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleNext = () => {
     setError(null)
-
-    // client-side required validation
-    const missing = (job?.form_fields ?? [])
-      .filter(f => f.enabled && f.required && f.id !== 'cv')
-      .filter(f => !(values[f.id] ?? '').trim())
-    if (missing.length) {
-      setError(`Please fill in: ${missing.map(f => f.label).join(', ')}`)
-      return
+    if (step === 1) {
+      if (!firstName.trim() || !lastName.trim()) { setError('Please enter your first and last name.'); return }
+      setStep(2)
+    } else if (step === 2) {
+      const emailField = job?.form_fields.find(f => f.id === 'email' && f.enabled && f.required)
+      if (emailField && !(values['email'] ?? '').trim()) { setError('Email is required.'); return }
+      setStep(3)
     }
+  }
 
+  const handleSubmit = async () => {
+    setError(null)
     setSubmitting(true)
     try {
-      // Upload CV first — capture BOTH the url AND the extracted resume_text
-      let resume_url: string | null = null
+      let resume_url:  string | null = null
       let resume_text: string | null = null
-
       if (cvFile) {
         const fd = new FormData()
         fd.append('file', cvFile)
         const up = await fetch(`${BASE}/api/v1/applications/upload-cv`, { method: 'POST', body: fd })
-        if (up.ok) {
-          const j = await up.json()
-          resume_url  = j.url          ?? null
-          // The upload endpoint returns the parsed text — send it so the AI can screen the candidate
-          resume_text = j.resume_text  ?? null
-        }
+        if (up.ok) { const j = await up.json(); resume_url = j.url ?? null; resume_text = j.resume_text ?? null }
       }
-
       const payload: Record<string, any> = {
-        name:          values['name']         ?? '',
-        email:         values['email']        ?? null,
-        phone:         values['phone']        ?? null,
-        linkedin_url:  values['linkedin_url'] ?? null,
-        github_url:    values['github_url']   ?? null,
-        cover_letter:  values['cover_letter'] ?? null,
+        name:         `${firstName} ${lastName}`.trim(),
+        email:        values['email']        ?? null,
+        phone:        values['phone']        ?? null,
+        linkedin_url: values['linkedin_url'] ?? null,
+        github_url:   values['github_url']   ?? null,
+        cover_letter: values['cover_letter'] ?? null,
         resume_url,
-        resume_text,   // ← critical: AI screener uses this to extract skills, experience, etc.
+        resume_text,
       }
-
       const res = await fetch(`${BASE}/api/v1/applications/submit/${slug}`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error(j?.detail ?? 'Submission failed')
-      }
+      if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j?.detail ?? 'Submission failed') }
       setSubmitted(true)
     } catch (err: any) {
       setError(err.message ?? 'Something went wrong. Please try again.')
@@ -120,199 +122,310 @@ export default function PublicJobPage() {
     }
   }
 
-  /* ── loading / not-found states ─────────────────────────────── */
+
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-      <Loader2 className="w-6 h-6 animate-spin text-neutral-400" />
-    </div>
+    <>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#fff', fontFamily:"'Atyp', system-ui, sans-serif" }}>
+      <Loader2 className="w-5 h-5 animate-spin text-violet-500" />
+    </div></>
   )
 
   if (notFound) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 px-6 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
-        <AlertCircle className="w-7 h-7 text-red-400" />
+    <>
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'#fff', fontFamily:"'Atyp', system-ui, sans-serif" }}>
+      <div className="w-12 h-12 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+        <AlertCircle className="w-6 h-6 text-red-400" />
       </div>
-      <h1 className="text-neutral-900 text-xl font-semibold mb-2">Position not found</h1>
-      <p className="text-neutral-400 text-sm max-w-xs">This job link may have expired or been removed by the employer.</p>
-    </div>
+      <h1 className="text-gray-900 text-lg font-semibold mb-1">Position not found</h1>
+      <p className="text-gray-400 text-sm">This job link may have expired or been removed.</p>
+    </div></>
   )
 
   if (submitted) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 px-6 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-green-50 border border-green-100 flex items-center justify-center mb-5">
-        <CheckCircle2 className="w-8 h-8 text-green-500" />
+    <>
+    <div style={{ height:'100vh', display:'flex', overflow:'hidden', fontFamily:"'Atyp', system-ui, sans-serif" }}>
+      <GifPanel />
+      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:'2rem', background:'#fff', overflowY:'auto' }}>
+        <div style={{ textAlign:'center', maxWidth:340 }}>
+          <div style={{ width:56, height:56, borderRadius:'50%', background:'#7c3aed', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px' }}>
+            <CheckCircle2 className="w-7 h-7 text-white" />
+          </div>
+          <h2 style={{ fontSize:18, fontWeight:700, color:'#111', marginBottom:8 }}>Application Submitted!</h2>
+          <p style={{ fontSize:13, color:'#6b7280', lineHeight:1.6 }}>
+            Thanks for applying for <strong style={{ color:'#111' }}>{job?.job_title}</strong>.<br />
+            We'll be in touch if your profile is a great match.
+          </p>
+        </div>
       </div>
-      <h1 className="text-neutral-900 text-xl font-semibold mb-2">Application submitted!</h1>
-      <p className="text-neutral-500 text-sm max-w-sm">
-        Thanks for applying for <strong>{job?.job_title}</strong>. The team will be in touch if your profile is a great match.
-      </p>
-    </div>
+    </div></>
   )
 
   const enabledFields = (job?.form_fields ?? []).filter(f => f.enabled)
+  const linkFields    = enabledFields.filter(f => ['email','phone','linkedin_url','github_url','portfolio_url'].includes(f.id))
+  const extraFields   = enabledFields.filter(f => !['cv','name','email','phone','linkedin_url','github_url','portfolio_url'].includes(f.id))
 
-  /* ── main page ───────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-neutral-50">
-      {/* Top bar */}
-      <div className="bg-white border-b border-neutral-200">
-        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-neutral-950 flex items-center justify-center">
-            <Building2 className="w-4 h-4 text-white" />
-          </div>
-          <span className="text-neutral-900 text-sm font-semibold">AutoHyre</span>
-          <span className="ml-auto text-xs text-neutral-400">Powered by AutoHyre ATS</span>
-        </div>
-      </div>
+    <>
+    <div style={{ height:'100vh', display:'flex', overflow:'hidden', fontFamily:"'Atyp', system-ui, sans-serif" }}>
 
-      <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
-        {/* Job header */}
-        <div className="bg-white border border-neutral-200 rounded-2xl p-8">
-          <div className="flex items-start justify-between gap-4 mb-6">
-            <div>
-              <h1 className="text-neutral-950 text-2xl font-bold mb-1">{job?.job_title}</h1>
-              {job?.department && (
-                <p className="text-indigo-600 text-sm font-medium">{job.department}</p>
-              )}
-            </div>
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200 flex-shrink-0">
-              Hiring
-            </span>
-          </div>
+      {/* ── LEFT: GIF panel ── */}
+      <GifPanel />
 
-          {/* Meta chips */}
-          <div className="flex flex-wrap gap-3 mb-6">
-            {job?.location && (
-              <div className="flex items-center gap-1.5 text-sm text-neutral-600 bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5">
-                <MapPin className="w-3.5 h-3.5 text-neutral-400" />
-                {job.location}
-              </div>
-            )}
-            {job?.remote && (
-              <div className="flex items-center gap-1.5 text-sm text-neutral-600 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5">
-                <Wifi className="w-3.5 h-3.5 text-indigo-400" />
-                Remote OK
-              </div>
-            )}
-            <div className="flex items-center gap-1.5 text-sm text-neutral-600 bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5">
-              <Briefcase className="w-3.5 h-3.5 text-neutral-400" />
-              <span className="capitalize">{job?.job_type?.replace('-', ' ')}</span>
-            </div>
-            {job?.salary_min && job?.salary_max && (
-              <div className="flex items-center gap-1.5 text-sm text-neutral-600 bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5">
-                <DollarSign className="w-3.5 h-3.5 text-neutral-400" />
-                {fmt(job.salary_min)} – {fmt(job.salary_max)}
-              </div>
-            )}
-          </div>
+      {/* ── RIGHT: scrollable form ── */}
+      <div style={{ flex:1, overflowY:'auto', background:'#fff', display:'flex', flexDirection:'column' }}>
+        <div style={{ flex:1, display:'flex', flexDirection:'column', justifyContent:'center', padding:'2.5rem 3rem', maxWidth:480, margin:'0 auto', width:'100%' }}>
 
-          {/* Description */}
-          {job?.job_description && (
-            <div className="prose prose-sm prose-neutral max-w-none">
-              <p className="text-neutral-600 text-sm leading-relaxed whitespace-pre-wrap">{job.job_description}</p>
+          {/* ── Job details ── */}
+          {job && (
+            <div style={{ marginBottom:24, paddingBottom:20, borderBottom:'1px solid #f3f4f6' }}>
+              <h1 style={{ fontSize:18, fontWeight:700, color:'#111', marginBottom:10, lineHeight:1.3 }}>{job.job_title}</h1>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                {job.department && (
+                  <span style={{ fontSize:11, color:'#7c3aed', background:'#f5f3ff', border:'1px solid #ede9fe', padding:'2px 10px', borderRadius:4, fontWeight:500 }}>
+                    {job.department}
+                  </span>
+                )}
+                {job.location && (
+                  <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#6b7280', background:'#fff', border:'1px solid #e5e7eb', padding:'2px 10px', borderRadius:4 }}>
+                    <MapPin size={9} />{job.location}
+                  </span>
+                )}
+                {job.remote && (
+                  <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#4f46e5', background:'#eef2ff', border:'1px solid #e0e7ff', padding:'2px 10px', borderRadius:4 }}>
+                    <Wifi size={9} />Remote
+                  </span>
+                )}
+                <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#6b7280', background:'#fff', border:'1px solid #e5e7eb', padding:'2px 10px', borderRadius:4, textTransform:'capitalize' }}>
+                  <Briefcase size={9} />{job.job_type?.replace('_', ' ')}
+                </span>
+                {job.salary_min && job.salary_max && (
+                  <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#6b7280', background:'#fff', border:'1px solid #e5e7eb', padding:'2px 10px', borderRadius:4 }}>
+                    <DollarSign size={9} />{fmt(job.salary_min)} – {fmt(job.salary_max)}
+                  </span>
+                )}
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Application form */}
-        <div className="bg-white border border-neutral-200 rounded-2xl p-8">
-          <h2 className="text-neutral-950 text-lg font-semibold mb-1">Apply for this position</h2>
-          <p className="text-neutral-400 text-sm mb-6">Fill in the form below and we'll review your application.</p>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {enabledFields.map(field => {
-              if (field.id === 'cv') return (
-                <div key="cv">
-                  <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                    {field.label} {field.required && <span className="text-red-500">*</span>}
-                  </label>
-                  <div
-                    onClick={() => fileRef.current?.click()}
-                    className={cn(
-                      'border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors',
-                      cvFile ? 'border-indigo-300 bg-indigo-50' : 'border-neutral-200 hover:border-neutral-300 bg-neutral-50',
-                    )}
-                  >
-                    <Upload className={cn('w-5 h-5', cvFile ? 'text-indigo-500' : 'text-neutral-400')} />
-                    {cvFile ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-indigo-700 font-medium">{cvFile.name}</span>
-                        <button type="button" onClick={e => { e.stopPropagation(); setCvFile(null) }}>
-                          <X className="w-4 h-4 text-neutral-400 hover:text-red-500" />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <p className="text-sm text-neutral-600 font-medium">Click to upload CV / Résumé</p>
-                        <p className="text-xs text-neutral-400">PDF, DOCX up to 10 MB</p>
-                      </>
-                    )}
+          {/* ── Progress ── */}
+          <div style={{ marginBottom:24 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+              <span style={{ fontSize:11, fontWeight:600, color:'#7c3aed', textTransform:'uppercase', letterSpacing:'0.05em' }}>{step} of {STEPS.length} completed</span>
+              <span style={{ fontSize:11, color:'#9ca3af' }}>{STEPS[step - 1].label}</span>
+            </div>
+            <div style={{ width:'100%', background:'#f3f4f6', borderRadius:99, height:4, overflow:'hidden' }}>
+              <div style={{ height:'100%', borderRadius:99, background:'#7c3aed', width:`${(step / STEPS.length) * 100}%`, transition:'width .4s ease' }} />
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:12 }}>
+              {STEPS.map((s, i) => (
+                <div key={s.number} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  <div style={{
+                    width:20, height:20, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center',
+                    fontSize:10, fontWeight:700, flexShrink:0,
+                    background: step >= s.number ? '#7c3aed' : '#f3f4f6',
+                    color: step >= s.number ? '#fff' : '#9ca3af',
+                  }}>
+                    {step > s.number ? <CheckCircle2 size={11} /> : s.number}
                   </div>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept=".pdf,.doc,.docx"
-                    className="hidden"
-                    onChange={e => setCvFile(e.target.files?.[0] ?? null)}
-                  />
+                  <span style={{ fontSize:11, fontWeight:500, color: step >= s.number ? '#374151' : '#9ca3af' }}>{s.label}</span>
+                  {i < STEPS.length - 1 && <div style={{ width:16, height:1, background:'#e5e7eb', marginLeft:2 }} />}
                 </div>
-              )
+              ))}
+            </div>
+          </div>
 
-              if (field.type === 'textarea') return (
-                <div key={field.id}>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                    {field.label} {field.required && <span className="text-red-500">*</span>}
-                  </label>
-                  <textarea
-                    rows={4}
-                    required={field.required}
-                    placeholder={field.placeholder ?? ''}
-                    value={values[field.id] ?? ''}
-                    onChange={e => set(field.id, e.target.value)}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all resize-none"
-                  />
-                </div>
-              )
-
-              return (
-                <div key={field.id}>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                    {field.label} {field.required && <span className="text-red-500">*</span>}
-                  </label>
-                  <input
-                    type={field.type}
-                    required={field.required}
-                    placeholder={field.placeholder ?? ''}
-                    value={values[field.id] ?? ''}
-                    onChange={e => set(field.id, e.target.value)}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none focus:border-neutral-400 focus:bg-white transition-all"
-                  />
-                </div>
-              )
-            })}
-
-            {error && (
-              <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                {error}
+          {/* ── Step 1 ── */}
+          {step === 1 && (
+            <div>
+              <h2 style={{ fontSize:14, fontWeight:700, color:'#111', marginBottom:2 }}>Personal Info</h2>
+              <p style={{ fontSize:11, color:'#9ca3af', marginBottom:16 }}>Tell us a bit about yourself to get started.</p>
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                <Field label="First Name" required>
+                  <div className="relative">
+                    <User size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input className="inp" placeholder="John" value={firstName} onChange={e => setFirstName(e.target.value)} />
+                  </div>
+                </Field>
+                <Field label="Last Name" required>
+                  <div className="relative">
+                    <User size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input className="inp" placeholder="Doe" value={lastName} onChange={e => setLastName(e.target.value)} />
+                  </div>
+                </Field>
+                <Field label="Gender">
+                  <div style={{ display:'flex', gap:8 }}>
+                    {(['male', 'female', 'other'] as const).map(g => (
+                      <button key={g} type="button" onClick={() => setGender(g)}
+                        style={{
+                          display:'flex', alignItems:'center', gap:6,
+                          padding:'7px 12px', borderRadius:8, border:'1px solid',
+                          fontSize:12, fontWeight:500, cursor:'pointer', textTransform:'capitalize',
+                          borderColor: gender === g ? '#7c3aed' : '#e5e7eb',
+                          background:  gender === g ? '#f5f3ff' : '#fff',
+                          color:       gender === g ? '#7c3aed' : '#6b7280',
+                          transition:  'all .15s',
+                        }}>
+                        <span style={{
+                          width:12, height:12, borderRadius:'50%', border:'2px solid',
+                          borderColor: gender === g ? '#7c3aed' : '#d1d5db',
+                          display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+                        }}>
+                          {gender === g && <span style={{ width:6, height:6, borderRadius:'50%', background:'#7c3aed', display:'block' }} />}
+                        </span>
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
               </div>
-            )}
+              {error && <ErrBox msg={error} />}
+              <div style={{ marginTop:20 }}><button className="pbtn" onClick={handleNext}>Next <ArrowRight size={13} /></button></div>
+            </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full flex items-center justify-center gap-2 bg-neutral-950 hover:bg-neutral-800 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors"
-            >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {submitting ? 'Submitting…' : 'Submit Application'}
-            </button>
-          </form>
+          {/* ── Step 2 ── */}
+          {step === 2 && (
+            <div>
+              <h2 style={{ fontSize:14, fontWeight:700, color:'#111', marginBottom:2 }}>Profile & Contact</h2>
+              <p style={{ fontSize:11, color:'#9ca3af', marginBottom:16 }}>Share how we can reach you and find your work.</p>
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                <Field label="Email Address" required>
+                  <div className="relative">
+                    <Mail size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="email" className="inp" placeholder="john@example.com" value={values['email'] ?? ''} onChange={e => set('email', e.target.value)} />
+                  </div>
+                </Field>
+                <Field label="Phone Number">
+                  <div className="relative">
+                    <Phone size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="tel" className="inp" placeholder="+1 555 000 0000" value={values['phone'] ?? ''} onChange={e => set('phone', e.target.value)} />
+                  </div>
+                </Field>
+                {linkFields.filter(f => !['email','phone'].includes(f.id)).map(field => {
+                  const Icon = field.id === 'linkedin_url' ? Linkedin : field.id === 'github_url' ? Github : Globe
+                  return (
+                    <Field key={field.id} label={field.label} required={field.required}>
+                      <div className="relative">
+                        <Icon size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input type="url" className="inp" placeholder={field.placeholder ?? 'https://'} value={values[field.id] ?? ''} onChange={e => set(field.id, e.target.value)} />
+                      </div>
+                    </Field>
+                  )
+                })}
+                {extraFields.filter(f => f.type === 'textarea').map(field => (
+                  <Field key={field.id} label={field.label} required={field.required}>
+                    <textarea rows={3} className="inp-bare resize-none" placeholder={field.placeholder ?? ''} value={values[field.id] ?? ''} onChange={e => set(field.id, e.target.value)} />
+                  </Field>
+                ))}
+              </div>
+              {error && <ErrBox msg={error} />}
+              <div style={{ marginTop:20, display:'flex', gap:8 }}>
+                <button type="button" onClick={() => setStep(1)}
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 16px', borderRadius:8, border:'1px solid #e5e7eb', fontSize:12, fontWeight:500, color:'#374151', background:'#fff', cursor:'pointer' }}>
+                  <ArrowLeft size={11} /> Back
+                </button>
+                <button className="pbtn" style={{ flex:1 }} onClick={handleNext}>Next <ArrowRight size={13} /></button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3 ── */}
+          {step === 3 && (
+            <div>
+              <h2 style={{ fontSize:14, fontWeight:700, color:'#111', marginBottom:2 }}>Upload Your CV</h2>
+              <p style={{ fontSize:11, color:'#9ca3af', marginBottom:16 }}>Upload your résumé so the team can review your experience.</p>
+              <div onClick={() => fileRef.current?.click()}
+                style={{
+                  cursor:'pointer', borderRadius:10, border:'1.5px dashed',
+                  borderColor: cvFile ? '#7c3aed' : '#e5e7eb',
+                  background: cvFile ? '#f5f3ff' : '#fafafa',
+                  padding:'2rem', display:'flex', flexDirection:'column',
+                  alignItems:'center', justifyContent:'center', gap:10, transition:'all .15s',
+                }}>
+                {cvFile ? (
+                  <>
+                    <div style={{ width:44, height:44, borderRadius:10, background:'#7c3aed', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <FileText size={20} className="text-white" />
+                    </div>
+                    <div style={{ textAlign:'center' }}>
+                      <p style={{ fontSize:13, fontWeight:600, color:'#7c3aed' }}>{cvFile.name}</p>
+                      <p style={{ fontSize:11, color:'#a78bfa', marginTop:2 }}>{(cvFile.size / 1024).toFixed(0)} KB</p>
+                    </div>
+                    <button type="button" onClick={e => { e.stopPropagation(); setCvFile(null) }}
+                      style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#f87171', background:'none', border:'none', cursor:'pointer' }}>
+                      <X size={10} /> Remove
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ width:44, height:44, borderRadius:10, background:'#f3f4f6', border:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <Upload size={18} className="text-gray-400" />
+                    </div>
+                    <div style={{ textAlign:'center' }}>
+                      <p style={{ fontSize:13, fontWeight:600, color:'#374151' }}>Click to upload CV / Résumé</p>
+                      <p style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>PDF, DOCX · up to 10 MB</p>
+                    </div>
+                  </>
+                )}
+              </div>
+              <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" style={{ display:'none' }} onChange={e => setCvFile(e.target.files?.[0] ?? null)} />
+              {error && <ErrBox msg={error} />}
+              <div style={{ marginTop:20, display:'flex', gap:8 }}>
+                <button type="button" onClick={() => setStep(2)}
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 16px', borderRadius:8, border:'1px solid #e5e7eb', fontSize:12, fontWeight:500, color:'#374151', background:'#fff', cursor:'pointer' }}>
+                  <ArrowLeft size={11} /> Back
+                </button>
+                <button className="pbtn" style={{ flex:1 }} onClick={handleSubmit} disabled={submitting}>
+                  {submitting
+                    ? <><Loader2 size={13} className="animate-spin" /> Submitting…</>
+                    : <><CheckCircle2 size={13} /> Submit Application</>}
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
-
-        <p className="text-center text-xs text-neutral-400 pb-6">
-          Powered by <strong className="text-neutral-600">AutoHyre</strong> · Applicant Tracking System
-        </p>
       </div>
+    </div></>
+  )
+}
+
+/* ── Full bleed GIF panel ── */
+function GifPanel() {
+  return (
+    <div className="hidden lg:block" style={{ width:'45%', flexShrink:0, position:'relative', height:'100%' }}>
+      <img
+        src="/original-a256fc211bd748036134c22b5777d44a.gif"
+        alt=""
+        style={{
+          position:'absolute', inset:0,
+          width:'100%', height:'100%',
+          objectFit:'cover', objectPosition:'center center',
+          display:'block',
+        }}
+      />
+    </div>
+  )
+}
+
+/* ── Field wrapper ── */
+function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display:'block', fontSize:12, fontWeight:500, color:'#374151', marginBottom:6 }}>
+        {label} {required && <span style={{ color:'#f87171' }}>*</span>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+/* ── Error box ── */
+function ErrBox({ msg }: { msg: string }) {
+  return (
+    <div style={{ display:'flex', alignItems:'flex-start', gap:8, marginTop:12, background:'#fef2f2', border:'1px solid #fecaca', color:'#dc2626', fontSize:12, padding:'10px 12px', borderRadius:8 }}>
+      <AlertCircle style={{ width:14, height:14, flexShrink:0, marginTop:1 }} />
+      {msg}
     </div>
   )
 }

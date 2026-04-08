@@ -367,7 +367,7 @@ export default function CandidatesPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         {(() => {
-                          const avatarSrc = getAvatarUrl((candidate as any).avatar_url, (candidate as any).github_url)
+                          const avatarSrc = getAvatarUrl(candidate.avatar_url, candidate.github_url, candidate.raw_profile?.photo_url)
                           return avatarSrc ? (
                             <img src={avatarSrc} alt={candidate.name} className="w-7 h-7 rounded-md object-cover flex-shrink-0" />
                           ) : (
@@ -404,25 +404,32 @@ export default function CandidatesPage() {
                     {/* AI Score */}
                     <td className="px-4 py-3">
                       {score !== null ? (
-                        <div className="flex items-center gap-1.5">
-                          <Star className="w-3 h-3 text-neutral-300 flex-shrink-0" />
-                          <span className={cn(
-                            'text-xs font-semibold px-1.5 py-0.5 rounded border',
-                            score >= 90 ? 'bg-green-50 text-green-700 border-green-200' :
-                            score >= 80 ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                            score >= 70 ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                            score >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                          'bg-neutral-100 text-neutral-600 border-neutral-200',
-                          )}>
-                            {score}%
-                          </span>
-                          {label && (
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <Star className="w-3 h-3 text-neutral-300 flex-shrink-0" />
                             <span className={cn(
-                              'text-[10px] px-1.5 py-px rounded border capitalize hidden xl:inline-flex',
-                              AI_LABEL_COLOR[label] ?? 'bg-neutral-100 text-neutral-500 border-neutral-200',
+                              'text-xs font-semibold px-1.5 py-0.5 rounded border',
+                              score >= 90 ? 'bg-green-50 text-green-700 border-green-200' :
+                              score >= 80 ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                              score >= 70 ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                              score >= 60 ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                            'bg-neutral-100 text-neutral-600 border-neutral-200',
                             )}>
-                              {label.replace('_', ' ')}
+                              {score}%
                             </span>
+                            {label && (
+                              <span className={cn(
+                                'text-[10px] px-1.5 py-px rounded border capitalize hidden xl:inline-flex',
+                                AI_LABEL_COLOR[label] ?? 'bg-neutral-100 text-neutral-500 border-neutral-200',
+                              )}>
+                                {label.replace('_', ' ')}
+                              </span>
+                            )}
+                          </div>
+                          {app?.ai_reasoning && (
+                            <p className="text-[10px] text-neutral-400 leading-tight max-w-[200px] truncate" title={app.ai_reasoning}>
+                              {app.ai_reasoning}
+                            </p>
                           )}
                         </div>
                       ) : (

@@ -1,25 +1,23 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
-  ArrowLeft, ArrowRight, MapPin, Briefcase, Mail, Github, Linkedin,
-  MessageSquare, Calendar, FileText, Brain, Phone,
+  ArrowLeft, ArrowRight, MapPin,
+  Mail, Calendar, FileText, Brain,
   CheckCircle2, Loader2, AlertCircle, ExternalLink, Save, Clock,
-  Zap, Star, RefreshCw, Send, ArrowDown, ArrowUp, ScanSearch,
-  Heart, MoreHorizontal, User, BookOpen, ChevronRight,
-  Activity, Award, Users, Building2, GraduationCap, Link2,
+  Star, RefreshCw, Send, ScanSearch, MoreHorizontal, User, BookOpen, ChevronRight,
+  Activity, Award, Users, Trash2,
 } from 'lucide-react'
 import StatusBadge from '@/components/cards/status-badge'
 import ScheduleInterviewModal from '@/components/candidates/schedule-interview-modal'
 import ComposeEmailModal from '@/components/candidates/compose-email-modal'
 import { getInitials, getMatchScoreBg, formatDate, formatRelativeTime, cn, getAvatarUrl } from '@/lib/utils'
-import { get, patch, post } from '@/lib/api'
+import { get, patch, post, delete as apiDelete } from '@/lib/api'
 import type { ApiCandidate } from '@/types/candidate'
 import type { ApiApplication } from '@/types/job'
-
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 /* ─── types ───────────────────────────────────────────────── */
 interface EmailMessage {
@@ -48,8 +46,8 @@ interface ActivityEntry {
   actorAvatar?: string
   text: React.ReactNode
   time: string
-  date: string           // YYYY-MM-DD for grouping
-  dateLabel: string      // "TODAY" | "11 APRIL, 2025" etc.
+  date: string
+  dateLabel: string
   detail?: React.ReactNode
 }
 
@@ -65,7 +63,7 @@ function groupBy<T>(arr: T[], key: (x: T) => string): Record<string, T[]> {
 }
 
 function toDateLabel(iso: string): { key: string; label: string } {
-  const d    = new Date(iso)
+  const d     = new Date(iso)
   const today = new Date()
   const key   = d.toISOString().slice(0, 10)
   if (key === today.toISOString().slice(0, 10)) return { key, label: 'TODAY' }
@@ -100,6 +98,7 @@ function ScoreRing({ score }: { score: number }) {
 
 /* ─── main component ──────────────────────────────────────── */
 export default function CandidateDetailPage({ params }: { params: { id: string } }) {
+  const router = useRouter()
   const [candidate, setCandidate] = useState<ApiCandidate | null>(null)
   const [applications, setApps]   = useState<ApiApplication[]>([])
   const [loading, setLoading]     = useState(true)
@@ -109,21 +108,32 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   const [notesSaving, setNotesSaving] = useState(false)
   const [notesSaved, setNotesSaved]   = useState(false)
 
-  const [rescanning, setRescanning]   = useState(false)
-  const [rescanMsg, setRescanMsg]     = useState<string | null>(null)
+  const [rescanning, setRescanning] = useState(false)
 
-  const [messages, setMessages]       = useState<EmailMessage[]>([])
-  const [convLoading, setConvLoading] = useState(false)
-  const [syncing, setSyncing]         = useState(false)
+  const [messages, setMessages] = useState<EmailMessage[]>([])
 
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus>({ gmail_connected: false, gcal_connected: false })
   const [composeOpen, setComposeOpen]   = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
 
-  const [activeTab, setActiveTab]   = useState<Tab>('Activity')
-  const [liked, setLiked]           = useState(false)
-  const [activityNote, setActivityNote] = useState('')
-  const [postingNote, setPostingNote]   = useState(false)
+  const [activeTab, setActiveTab]       = useState<Tab>('Activity')
+  const [moreOpen, setMoreOpen]         = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleting, setDeleting]         = useState(false)
+  const moreRef                         = useRef<HTMLDivElement>(null)
+
+  const [allIds, setAllIds] = useState<string[]>([])
+
+  /* ─── fetch all candidate IDs for prev/next navigation ─── */
+  useEffect(() => {
+    get<ApiCandidate[]>('/api/v1/candidates')
+      .then(list => setAllIds(list.map(c => c.id)))
+      .catch(() => {})
+  }, [])
+
+  const currentIndex = allIds.indexOf(params.id)
+  const prevId = currentIndex > 0 ? allIds[currentIndex - 1] : null
+  const nextId = currentIndex !== -1 && currentIndex < allIds.length - 1 ? allIds[currentIndex + 1] : null
 
   /* ─── fetch ─── */
   const fetchData = useCallback(async () => {
@@ -150,32 +160,23 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   }, [params.id])
 
   const fetchConversation = useCallback(async () => {
-    setConvLoading(true)
     try {
       const conv = await get<{ messages: EmailMessage[] }>(`/api/v1/conversations/${params.id}`)
       setMessages(conv.messages ?? [])
     } catch { setMessages([]) }
-    finally { setConvLoading(false) }
   }, [params.id])
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { fetchConversation() }, [fetchConversation])
 
-  const syncConversation = async () => {
-    setSyncing(true)
-    try { await post(`/api/v1/conversations/${params.id}/sync`, {}); await fetchConversation() }
-    finally { setSyncing(false) }
-  }
-
   const rescanAll = async () => {
     if (!applications.length) return
-    setRescanning(true); setRescanMsg(null)
+    setRescanning(true)
     try {
       await Promise.all(applications.map(app => post(`/api/v1/applications/${app.id}/screen`, {}).catch(() => null)))
       await fetchData()
-      setRescanMsg('AI re-scan complete!')
-    } catch { setRescanMsg('Re-scan failed — try again.') }
-    finally { setRescanning(false); setTimeout(() => setRescanMsg(null), 4000) }
+    } catch {}
+    finally { setRescanning(false) }
   }
 
   const saveNotes = async () => {
@@ -189,15 +190,15 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
     } finally { setNotesSaving(false) }
   }
 
-  const postNote = async () => {
-    if (!activityNote.trim()) return
-    setPostingNote(true)
+  const handleDelete = async () => {
+    setDeleting(true)
     try {
-      await patch<ApiCandidate>(`/api/v1/candidates/${params.id}`, { notes: `${notes}\n\n[Note] ${activityNote}`.trim() })
-      setNotes(prev => `${prev}\n\n[Note] ${activityNote}`.trim())
-      setActivityNote('')
-    } catch {}
-    finally { setPostingNote(false) }
+      await apiDelete(`/api/v1/candidates/${params.id}`)
+      router.push('/candidates')
+    } catch {
+      setDeleting(false)
+      setDeleteModalOpen(false)
+    }
   }
 
   /* ─── derived ─── */
@@ -205,12 +206,10 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
     ? [...applications].sort((a, b) => (b.ai_score ?? 0) - (a.ai_score ?? 0))[0]
     : null
 
-  /* build activity timeline from apps + messages */
   const buildActivity = (): ActivityEntry[] => {
     if (!candidate) return []
     const items: ActivityEntry[] = []
 
-    // profile created
     const created = toDateLabel(candidate.created_at)
     items.push({
       id: 'created',
@@ -220,7 +219,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       date: created.key, dateLabel: created.label,
     })
 
-    // applications
     applications.forEach(app => {
       const dl = toDateLabel(app.created_at)
       items.push({
@@ -232,7 +230,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         date: dl.key, dateLabel: dl.label,
       })
 
-      // stage moves
       if (app.current_stage !== 'sourced' && app.current_stage !== 'applied') {
         const dl2 = toDateLabel(app.updated_at)
         items.push({
@@ -252,7 +249,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         })
       }
 
-      // AI score
       if (app.ai_score !== null && app.ai_score !== undefined) {
         const dl3 = toDateLabel(app.updated_at)
         items.push({
@@ -268,7 +264,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       }
     })
 
-    // messages as activity
     messages.forEach(msg => {
       const dl = toDateLabel(msg.sent_at)
       items.push({
@@ -287,12 +282,11 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       })
     })
 
-    // sort newest first
     return items.sort((a, b) => b.date.localeCompare(a.date))
   }
 
   const activityItems = buildActivity()
-  const grouped = groupBy(activityItems, x => x.date)
+  const grouped   = groupBy(activityItems, x => x.date)
   const groupKeys = Object.keys(grouped).sort((a, b) => b.localeCompare(a))
 
   if (loading) return (
@@ -309,7 +303,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   )
 
   const TABS: Tab[] = ['Rating', 'Activity', 'Recruitment']
-
   const TAB_ICONS: Record<Tab, React.ElementType> = {
     Rating:      Award,
     Activity:    Activity,
@@ -321,7 +314,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
 
       {/* ── top header bar ── */}
       <div className="flex items-center justify-between px-6 pt-3 pb-3 border-b border-neutral-100 bg-white">
-        {/* left: back + avatar + name */}
         <div className="flex items-center gap-3">
           <Link href="/candidates"
             className="w-8 h-8 rounded-lg border border-neutral-200 flex items-center justify-center text-neutral-500 hover:text-neutral-900 hover:border-neutral-300 transition-colors flex-shrink-0"
@@ -329,9 +321,8 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
             <ArrowLeft className="w-4 h-4" />
           </Link>
 
-          {/* avatar */}
           {(() => {
-            const avatarSrc = getAvatarUrl(candidate.avatar_url, candidate.github_url)
+            const avatarSrc = getAvatarUrl(candidate.avatar_url, candidate.github_url, candidate.raw_profile?.photo_url)
             return avatarSrc ? (
               <img src={avatarSrc} alt={candidate.name} className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
             ) : (
@@ -344,7 +335,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-neutral-900 text-base font-semibold leading-tight">{candidate.name}</h1>
-              {/* gender icon placeholder */}
               <span className="text-blue-400 text-xs">♂</span>
             </div>
             <p className="text-neutral-400 text-xs">
@@ -353,26 +343,40 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           </div>
         </div>
 
-        {/* right: nav + actions */}
         <div className="flex items-center gap-2">
-          <button className="w-8 h-8 rounded-lg border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:border-neutral-300 transition-colors">
+          <button
+            onClick={() => prevId && router.push(`/candidates/${prevId}`)}
+            disabled={!prevId}
+            className="w-8 h-8 rounded-lg border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:border-neutral-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
-          <button className="w-8 h-8 rounded-lg border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:border-neutral-300 transition-colors">
+          <button
+            onClick={() => nextId && router.push(`/candidates/${nextId}`)}
+            disabled={!nextId}
+            className="w-8 h-8 rounded-lg border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 hover:border-neutral-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
-          <button
-            onClick={() => setLiked(l => !l)}
-            className={cn(
-              'w-8 h-8 rounded-lg border flex items-center justify-center transition-colors',
-              liked ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-neutral-200 text-neutral-300 hover:text-rose-400 hover:border-rose-200',
+          <div className="relative" ref={moreRef}>
+            <button
+              onClick={() => setMoreOpen(o => !o)}
+              className="w-8 h-8 rounded-lg border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {moreOpen && (
+              <div className="absolute right-0 top-10 z-50 w-44 bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden">
+                <button
+                  onClick={() => { setMoreOpen(false); setDeleteModalOpen(true) }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Candidate
+                </button>
+              </div>
             )}
-          >
-            <Heart className="w-3.5 h-3.5" fill={liked ? 'currentColor' : 'none'} />
-          </button>
-          <button className="w-8 h-8 rounded-lg border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors">
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
+          </div>
           <div className="w-px h-5 bg-neutral-200 mx-1" />
           <button
             onClick={() => setScheduleOpen(true)}
@@ -386,7 +390,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           >
             <Mail className="w-3.5 h-3.5" /> Send Email
           </button>
-          {/* re-scan AI */}
           {applications.length > 0 && (
             <button
               onClick={rescanAll}
@@ -402,61 +405,42 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         </div>
       </div>
 
-      {/* ── body: left sidebar + right panel ── */}
+      {/* ── body ── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* ══ LEFT SIDEBAR ══════════════════════════════════════ */}
+        {/* ══ LEFT SIDEBAR ══ */}
         <div className="w-96 flex-shrink-0 border-r border-neutral-100 bg-white overflow-y-auto">
           <div className="p-5 space-y-6">
 
-            {/* Personal Information */}
             <section>
               <SectionHeader icon={User} label="Personal Information" />
               <div className="space-y-2.5 mt-3">
                 <InfoRow label="Experience" value={candidate.experience != null ? `${candidate.experience} Years` : '—'} />
                 <InfoRow label="Source" value={candidate.source ?? '—'} capitalize />
-                {(candidate as any).birth_date && (
-                  <InfoRow label="Birth of date" value={(candidate as any).birth_date} />
-                )}
-                {(candidate as any).nationality && (
-                  <InfoRow label="Nationality" value={(candidate as any).nationality} />
-                )}
-                {(candidate as any).dependants && (
-                  <InfoRow label="Dependants" value={(candidate as any).dependants} />
-                )}
+                {(candidate as any).birth_date    && <InfoRow label="Birth of date" value={(candidate as any).birth_date} />}
+                {(candidate as any).nationality   && <InfoRow label="Nationality"   value={(candidate as any).nationality} />}
+                {(candidate as any).dependants    && <InfoRow label="Dependants"    value={(candidate as any).dependants} />}
               </div>
             </section>
 
-            {/* Address & Contact */}
             <section>
               <SectionHeader icon={MapPin} label="Address & Contact" />
               <div className="space-y-2.5 mt-3">
-                {candidate.location && <InfoRow label="Location" value={candidate.location} />}
-                <InfoRowLink label="Email" value={candidate.email} href={`mailto:${candidate.email}`} />
-                {candidate.phone && <InfoRowLink label="Phone" value={candidate.phone} href={`tel:${candidate.phone}`} />}
-                {candidate.linkedin_url && (
-                  <InfoRowLink label="LinkedIn" value="View Profile" href={candidate.linkedin_url} external />
-                )}
-                {candidate.github_url && (
-                  <InfoRowLink label="GitHub" value="View Profile" href={candidate.github_url} external />
-                )}
-                {candidate.resume_url && (
-                  <InfoRowLink label="Resume" value="View Resume" href={candidate.resume_url} external />
-                )}
+                {candidate.location    && <InfoRow label="Location" value={candidate.location} />}
+                <InfoRowLink label="Email"    value={candidate.email}          href={`mailto:${candidate.email}`} />
+                {candidate.phone       && <InfoRowLink label="Phone"    value={candidate.phone}          href={`tel:${candidate.phone}`} />}
+                {candidate.linkedin_url && <InfoRowLink label="LinkedIn" value="View Profile"             href={candidate.linkedin_url} external />}
+                {candidate.github_url   && <InfoRowLink label="GitHub"   value="View Profile"             href={candidate.github_url} external />}
+                {candidate.resume_url   && <InfoRowLink label="Resume"   value="View Resume"              href={candidate.resume_url} external />}
               </div>
             </section>
 
-            {/* Preferences */}
             <section>
               <SectionHeader icon={BookOpen} label="Preferences" />
               <div className="space-y-3 mt-3">
-                {candidate.title && (
-                  <InfoRow label="Job Title" value={candidate.title} />
-                )}
-                {candidate.company && (
-                  <InfoRow label="Company" value={candidate.company} />
-                )}
-                {(candidate.skills ?? []).length > 0 && (
+                {candidate.title   && <InfoRow label="Job Title" value={candidate.title} />}
+                {candidate.company && <InfoRow label="Company"   value={candidate.company} />}
+                {(candidate.skills ?? []).length > 0 ? (
                   <div>
                     <p className="text-neutral-400 text-[11px] font-medium uppercase tracking-wide mb-1.5">Skills & Tech Stack</p>
                     <div className="flex flex-wrap gap-1.5">
@@ -467,14 +451,12 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                       ))}
                     </div>
                   </div>
-                )}
-                {(candidate.skills ?? []).length === 0 && (
+                ) : (
                   <p className="text-neutral-400 text-xs italic">No skills extracted yet</p>
                 )}
               </div>
             </section>
 
-            {/* Notes */}
             <section>
               <SectionHeader icon={FileText} label="Notes" />
               <div className="mt-3">
@@ -503,7 +485,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           </div>
         </div>
 
-        {/* ══ RIGHT PANEL ═══════════════════════════════════════ */}
+        {/* ══ RIGHT PANEL ══ */}
         <div className="flex-1 flex flex-col overflow-hidden bg-white">
 
           {/* tabs */}
@@ -538,15 +520,14 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                 <motion.div key="rating" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
                   {bestApp && bestApp.ai_score !== null ? (
                     <>
-                      {/* score card */}
                       <div className="bg-white border border-neutral-200 rounded-xl p-6 flex items-center gap-8">
                         <ScoreRing score={bestApp.ai_score ?? 0} />
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-3 flex-wrap">
                             <span className={cn('text-sm font-semibold px-3 py-1 rounded-full border capitalize', {
-                              'bg-green-50 text-green-700 border-green-200':  (bestApp.ai_label ?? '') === 'strong_fit',
-                              'bg-blue-50  text-blue-700  border-blue-200':   (bestApp.ai_label ?? '') === 'good_fit',
-                              'bg-amber-50 text-amber-700 border-amber-200':  (bestApp.ai_label ?? '') === 'reserve',
+                              'bg-green-50 text-green-700 border-green-200':        (bestApp.ai_label ?? '') === 'strong_fit',
+                              'bg-blue-50  text-blue-700  border-blue-200':         (bestApp.ai_label ?? '') === 'good_fit',
+                              'bg-amber-50 text-amber-700 border-amber-200':        (bestApp.ai_label ?? '') === 'reserve',
                               'bg-neutral-100 text-neutral-600 border-neutral-200': !bestApp.ai_label,
                             })}>
                               {bestApp.ai_label ? bestApp.ai_label.replace('_', ' ') : 'Pending'}
@@ -570,7 +551,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                         </div>
                       </div>
 
-                      {/* all applications scores */}
                       {applications.length > 1 && (
                         <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden">
                           <div className="px-5 py-3.5 border-b border-neutral-100">
@@ -619,8 +599,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
               {/* ── ACTIVITY TAB ── */}
               {activeTab === 'Activity' && (
                 <motion.div key="activity" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-
-                  {/* search / filter bar */}
                   <div className="flex items-center gap-2">
                     <div className="flex-1 bg-white border border-neutral-200 rounded-lg px-3 py-2 flex items-center gap-2">
                       <ScanSearch className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
@@ -631,7 +609,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                     </button>
                   </div>
 
-                  {/* timeline */}
                   {groupKeys.length === 0 ? (
                     <p className="text-neutral-400 text-sm text-center py-14">No activity yet.</p>
                   ) : (
@@ -654,13 +631,11 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                                   transition={{ delay: idx * 0.04 }}
                                   className="flex items-start gap-4 py-1 px-1"
                                 >
-                                  {/* time */}
                                   <span className="text-[11px] text-neutral-400 w-16 flex-shrink-0 pt-3 tabular-nums leading-none text-right">{item.time}</span>
-                                  {/* icon + connector line */}
                                   <div className="flex flex-col items-center flex-shrink-0">
                                     {item.actorAvatar ? (
                                       (() => {
-                                        const avatarSrc = getAvatarUrl(candidate.avatar_url, candidate.github_url)
+                                        const avatarSrc = getAvatarUrl(candidate.avatar_url, candidate.github_url, candidate.raw_profile?.photo_url)
                                         return avatarSrc ? (
                                           <img src={avatarSrc} alt={candidate.name} className="w-8 h-8 rounded-full object-cover mt-1.5 z-10 flex-shrink-0" />
                                         ) : (
@@ -676,7 +651,6 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                                     )}
                                     {!isLast && <div className="w-px flex-1 bg-neutral-200 my-1" style={{ minHeight: '28px' }} />}
                                   </div>
-                                  {/* text */}
                                   <div className="flex-1 min-w-0 pt-3 pb-5">
                                     <div className="text-[13px] text-neutral-700 leading-snug">
                                       {item.actor && <strong className="text-neutral-900 font-semibold mr-1">{item.actor}</strong>}
@@ -737,6 +711,42 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         </div>
       </div>
 
+      {/* ── Delete Confirmation Modal ── */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-neutral-900 font-semibold text-sm">Delete Candidate</h2>
+                <p className="text-neutral-400 text-xs mt-0.5">This action cannot be undone.</p>
+              </div>
+            </div>
+            <p className="text-neutral-600 text-sm mb-6">
+              Are you sure you want to permanently delete <strong>{candidate.name}</strong> and all their application data?
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={deleting}
+                className="flex-1 py-2 text-sm font-medium text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deleting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Deleting…</> : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── modals ── */}
       <ComposeEmailModal
         open={composeOpen}
@@ -760,7 +770,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   )
 }
 
-/* ─── small shared sub-components ────────────────────────── */
+/* ─── sub-components ─────────────────────────────────────── */
 
 function SectionHeader({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
   return (

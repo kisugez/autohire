@@ -66,8 +66,10 @@ export function formatSalary(min?: number | null, max?: number | null): string {
 export function getAvatarUrl(
   avatarUrl: string | null | undefined,
   githubUrl: string | null | undefined,
+  rawPhotoUrl?: string | null,
 ): string | null {
   if (avatarUrl) return avatarUrl
+  if (rawPhotoUrl) return rawPhotoUrl
   if (githubUrl) {
     const match = githubUrl.match(/github\.com\/([^/?\s]+)/)
     if (match?.[1]) return `https://github.com/${match[1]}.png`

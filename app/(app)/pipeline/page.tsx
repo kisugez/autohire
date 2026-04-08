@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   DndContext, DragOverlay, pointerWithin,
   PointerSensor, useSensor, useSensors, useDroppable, useDraggable,
@@ -9,11 +9,11 @@ import {
 import Link from 'next/link'
 import {
   MapPin, Loader2, AlertCircle, Filter, RefreshCw,
-  Briefcase, Zap, MoreHorizontal, X, ChevronRight,
+  Briefcase, Zap, MoreHorizontal, X, ChevronRight, Trash2,
 } from 'lucide-react'
 import { useJobsContext } from '@/lib/jobs-context'
-import { get, patch } from '@/lib/api'
-import { getInitials, getMatchScoreBg, cn } from '@/lib/utils'
+import { get, patch, delete as del } from '@/lib/api'
+import { getInitials, getMatchScoreBg, getAvatarUrl, cn } from '@/lib/utils'
 import type { ApiCandidate, CandidateStage } from '@/types/candidate'
 import type { ApiApplication } from '@/types/job'
 
@@ -91,6 +91,13 @@ const NEXT_STAGE: Partial<Record<CandidateStage, string>> = {
   offer:     'Mark Hired',
 }
 
+const NEXT_STAGE_ID: Partial<Record<CandidateStage, CandidateStage>> = {
+  sourced:   'screening',
+  screening: 'interview',
+  interview: 'offer',
+  offer:     'hired',
+}
+
 interface PipelineCard {
   applicationId: string
   candidateId: string
@@ -136,9 +143,29 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
 }
 
 // ── Draggable card ────────────────────────────────────────────────
-function DraggableCard({ card }: { card: PipelineCard }) {
+function DraggableCard({
+  card,
+  onMoveNext,
+  onDelete,
+}: {
+  card: PipelineCard
+  onMoveNext: (card: PipelineCard) => void
+  onDelete: (card: PipelineCard) => void
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: card.applicationId })
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [menuOpen])
 
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
@@ -177,18 +204,29 @@ function DraggableCard({ card }: { card: PipelineCard }) {
           </Link>
           <p className="text-neutral-400 text-[10px] truncate mt-0.5">{card.title || '—'}</p>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
+        {/* … menu */}
+        <div className="flex items-center gap-1 flex-shrink-0 relative" ref={menuRef}>
           {card.aiScore !== null && (
             <span className={cn('text-[10px] font-bold px-1 py-0.5 rounded border', getMatchScoreBg(card.aiScore))}>
               {card.aiScore}%
             </span>
           )}
           <button
-            onClick={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); setMenuOpen(v => !v) }}
             className="p-0.5 rounded hover:bg-neutral-100 text-neutral-400 hover:text-neutral-600 transition-colors"
           >
             <MoreHorizontal className="w-3 h-3" />
           </button>
+          {menuOpen && (
+            <div className="absolute top-6 right-0 z-50 bg-white border border-neutral-200 rounded-lg shadow-lg py-1 w-36">
+              <button
+                onClick={e => { e.stopPropagation(); setMenuOpen(false); onDelete(card) }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <Trash2 className="w-3 h-3" /> Delete Candidate
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -204,18 +242,12 @@ function DraggableCard({ card }: { card: PipelineCard }) {
         )}
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
-        <button
-          onClick={e => { e.stopPropagation(); e.preventDefault() }}
-          className="flex items-center justify-center w-6 h-6 rounded-md border border-neutral-200 text-neutral-400 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
-        >
-          <X className="w-3 h-3" />
-        </button>
+      {/* Footer — only the Next Stage button, no X */}
+      <div className="flex items-center px-2.5 pb-2.5">
         {nextLabel ? (
           <button
-            onClick={e => { e.stopPropagation(); e.preventDefault() }}
-            className="flex-1 flex items-center justify-center gap-1 h-6 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-[10px] font-medium border border-neutral-200 transition-colors"
+            onClick={e => { e.stopPropagation(); e.preventDefault(); onMoveNext(card) }}
+            className="flex-1 flex items-center justify-center gap-1 h-6 rounded-md bg-neutral-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 text-neutral-600 text-[10px] font-medium border border-neutral-200 transition-colors"
           >
             {nextLabel}
             <ChevronRight className="w-2.5 h-2.5" />
@@ -230,6 +262,62 @@ function DraggableCard({ card }: { card: PipelineCard }) {
   )
 }
 
+// ── Delete confirmation modal ─────────────────────────────────────
+function DeleteCandidateModal({
+  candidate,
+  onConfirm,
+  onClose,
+  deleting,
+}: {
+  candidate: PipelineCard | null
+  onConfirm: () => void
+  onClose: () => void
+  deleting: boolean
+}) {
+  if (!candidate) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+            <Trash2 className="w-5 h-5 text-red-600" />
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-neutral-400 hover:bg-neutral-100 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <h2 className="text-neutral-900 text-base font-semibold mb-1">Delete Candidate</h2>
+        <p className="text-neutral-500 text-sm mb-6">
+          Are you sure you want to permanently delete{' '}
+          <strong className="text-neutral-800">{candidate.name}</strong>?{' '}
+          This will remove all their data and cannot be undone.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-xl hover:bg-neutral-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={deleting}
+            className="flex-1 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+          >
+            {deleting
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Deleting…</>
+              : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────
 export default function PipelinePage() {
   const { jobs } = useJobsContext()
@@ -239,6 +327,8 @@ export default function PipelinePage() {
   const [error, setError]             = useState<string | null>(null)
   const [activeCard, setActiveCard]   = useState<PipelineCard | null>(null)
   const [overStageId, setOverStageId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<PipelineCard | null>(null)
+  const [deleting, setDeleting]         = useState(false)
 
   const fetchPipeline = useCallback(async () => {
     setLoading(true); setError(null)
@@ -271,7 +361,7 @@ export default function PipelinePage() {
           location:      c.location ?? '',
           skills:        Array.isArray(c.skills) ? c.skills : [],
           aiScore:       app.ai_score,
-          avatarUrl:     (c as any).github_avatar_url ?? null,
+          avatarUrl:     getAvatarUrl(c.avatar_url, c.github_url),
           stage,
           jobTitle:      (app as any)._jobTitle ?? app.job_title ?? null,
           jobId:         app.job_id,
@@ -329,6 +419,42 @@ export default function PipelinePage() {
       await fetchPipeline()
     }
   }, [findCardStage, resolveToStage, fetchPipeline])
+
+  const handleMoveNext = useCallback(async (card: PipelineCard) => {
+    const toStage = NEXT_STAGE_ID[card.stage]
+    if (!toStage) return
+    setCards(prev => {
+      const from = [...(prev[card.stage] ?? [])]
+      const to   = [...(prev[toStage]    ?? [])]
+      const idx  = from.findIndex(c => c.applicationId === card.applicationId)
+      if (idx === -1) return prev
+      const [moved] = from.splice(idx, 1)
+      to.unshift({ ...moved, stage: toStage })
+      return { ...prev, [card.stage]: from, [toStage]: to }
+    })
+    try {
+      await patch(`/api/v1/applications/${card.applicationId}`, { current_stage: toStage })
+    } catch {
+      await fetchPipeline()
+    }
+  }, [fetchPipeline])
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await del(`/api/v1/candidates/${deleteTarget.candidateId}`)
+      setCards(prev => {
+        const updated = { ...prev }
+        for (const s of STAGES) {
+          updated[s.id] = (updated[s.id] ?? []).filter(c => c.candidateId !== deleteTarget.candidateId)
+        }
+        return updated
+      })
+      setDeleteTarget(null)
+    } catch { /* keep modal open on error */ }
+    finally { setDeleting(false) }
+  }, [deleteTarget])
 
   const displayCards = jobFilter
     ? Object.fromEntries(Object.entries(cards).map(([s, l]) => [s, l.filter(c => c.jobId === jobFilter)]))
@@ -394,7 +520,6 @@ export default function PipelinePage() {
 
               return (
                 <div key={stage.id} className="flex-shrink-0 w-[220px]">
-                  {/* Column header — left border accent, rounded-md (less rounded) */}
                   <div className={cn(
                     'flex items-center gap-2 mb-2 px-2.5 py-2 rounded-md border border-l-4 border-neutral-200/60',
                     stage.headerBg,
@@ -420,7 +545,12 @@ export default function PipelinePage() {
                       </div>
                     ) : (
                       stageCandidates.map(card => (
-                        <DraggableCard key={card.applicationId} card={card} />
+                        <DraggableCard
+                          key={card.applicationId}
+                          card={card}
+                          onMoveNext={handleMoveNext}
+                          onDelete={setDeleteTarget}
+                        />
                       ))
                     )}
                   </DroppableColumn>
@@ -456,6 +586,14 @@ export default function PipelinePage() {
           </DragOverlay>
         </DndContext>
       )}
+
+      {/* Delete modal — rendered at page level so it's always in scope */}
+      <DeleteCandidateModal
+        candidate={deleteTarget}
+        onConfirm={handleDeleteConfirm}
+        onClose={() => { if (!deleting) setDeleteTarget(null) }}
+        deleting={deleting}
+      />
     </div>
   )
 }

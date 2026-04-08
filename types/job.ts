@@ -71,6 +71,7 @@ export interface ApiJob {
   salary_max: number | null
   hiring_manager: string | null
   min_ai_score: number
+  openings: number
   pipeline_stages: string[] | null
   created_at: string
   updated_at: string

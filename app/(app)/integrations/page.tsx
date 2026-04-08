@@ -95,6 +95,7 @@ const ATS_INTEGRATIONS = [
 ]
 
 interface GoogleStatus { gmail_connected: boolean; gmail_email?: string; gcal_connected: boolean }
+interface OutlookStatus { outlook_connected: boolean; outlook_email?: string }
 
 
 // ── LinkedIn Verify Banner ────────────────────────────────────────────────────
@@ -102,6 +103,7 @@ function LinkedInVerifyBanner({ onDismiss }: { onDismiss: () => void }) {
   const [code, setCode]       = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
+  const [verifyStatus, setVerifyStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle')
   const [success, setSuccess] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -211,6 +213,7 @@ function ConnectModal({
   const [code, setCode]       = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
+  const [verifyStatus, setVerifyStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle')
 
   const handleConnect = async () => {
     if (!email.trim() || !password.trim()) {
@@ -219,7 +222,32 @@ function ConnectModal({
     }
     setLoading(true)
     setError(null)
+
     try {
+      // Step 1 — verify credentials actually work before saving
+      if (step === 'credentials' && platform.id !== 'linkedin') {
+        setVerifyStatus('verifying')
+        let verify: { ok: boolean; detail?: string | null }
+        try {
+          verify = await integrationsApi.verify({
+            platform: platform.id,
+            email: email.trim(),
+            password,
+          })
+        } catch {
+          verify = { ok: false, detail: 'Could not reach server. Try again.' }
+        }
+
+        if (!verify.ok) {
+          setVerifyStatus('error')
+          setError(verify.detail ?? 'Login failed. Check your credentials.')
+          setLoading(false)
+          return
+        }
+        setVerifyStatus('success')
+      }
+
+      // Step 2 — save credentials to DB
       const result = await integrationsApi.connect({
         platform: platform.id,
         email: email.trim(),
@@ -230,7 +258,6 @@ function ConnectModal({
       onClose()
     } catch (e: unknown) {
       const msg = (e as any)?.response?.data?.detail
-      // If the platform returns a "verification required" signal
       if (msg?.includes('verification') || msg?.includes('2FA') || msg?.includes('code')) {
         setStep('verify')
         setError(null)
@@ -317,6 +344,19 @@ function ConnectModal({
                 </button>
               </div>
             </div>
+            {/* Verify status indicator */}
+            {verifyStatus === 'verifying' && (
+              <div className="flex items-center gap-2 text-[12px] text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <Loader2 size={13} className="animate-spin flex-shrink-0" />
+                Verifying credentials with {platform.name}… (may take up to 30s)
+              </div>
+            )}
+            {verifyStatus === 'success' && (
+              <div className="flex items-center gap-2 text-[12px] text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                <CheckCircle2 size={13} className="flex-shrink-0" />
+                Login verified — saving your account…
+              </div>
+            )}
             {error && (
               <div className="flex items-center gap-2 text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                 <AlertCircle size={13} className="flex-shrink-0" />
@@ -412,6 +452,10 @@ function IntegrationsContent() {
   const [connectingGmail, setConnectingGmail] = useState(false)
   const [disconnectingGmail, setDisconnectingGmail] = useState(false)
 
+  const [outlookStatus, setOutlookStatus] = useState<OutlookStatus>({ outlook_connected: false })
+  const [connectingOutlook, setConnectingOutlook] = useState(false)
+  const [disconnectingOutlook, setDisconnectingOutlook] = useState(false)
+
   const [integrations, setIntegrations] = useState<PlatformIntegration[]>([])
   const [intLoading, setIntLoading] = useState(true)
 
@@ -430,14 +474,19 @@ function IntegrationsContent() {
     setTimeout(() => setToast(null), 4000)
   }
 
-  // Load Google status
+  // Load Google + Outlook status
   useEffect(() => {
     const gmailDone = searchParams.get('gmail')
+    const outlookDone = searchParams.get('outlook')
     if (gmailDone === 'connected') showToast('Gmail connected successfully!', true)
+    if (outlookDone === 'connected') showToast('Outlook connected successfully!', true)
     get<GoogleStatus>('/api/v1/google/status')
       .then(s => setGoogleStatus(s))
       .catch(() => {})
       .finally(() => setGoogleLoading(false))
+    get<OutlookStatus>('/api/v1/outlook/status')
+      .then(s => setOutlookStatus(s))
+      .catch(() => {})
   }, [searchParams])
 
   // Load platform integrations
@@ -493,6 +542,30 @@ function IntegrationsContent() {
       showToast('Failed to disconnect Gmail. Try again.', false)
     } finally {
       setDisconnectingGmail(false)
+    }
+  }
+
+  const connectOutlook = async () => {
+    setConnectingOutlook(true)
+    try {
+      const { url } = await get<{ url: string }>('/api/v1/outlook/connect')
+      window.location.href = url
+    } catch {
+      showToast('Failed to start Outlook OAuth.', false)
+      setConnectingOutlook(false)
+    }
+  }
+
+  const disconnectOutlook = async () => {
+    setDisconnectingOutlook(true)
+    try {
+      await del('/api/v1/outlook/disconnect')
+      setOutlookStatus({ outlook_connected: false, outlook_email: undefined })
+      showToast('Outlook disconnected.', true)
+    } catch {
+      showToast('Failed to disconnect Outlook. Try again.', false)
+    } finally {
+      setDisconnectingOutlook(false)
     }
   }
 
@@ -634,7 +707,7 @@ function IntegrationsContent() {
                     <Link2 size={11} /> Learn more
                   </a>
 
-                  {isConnected ? (
+                  {isConnected && (
                     <button
                       onClick={() => handleDisconnect(platform.id)}
                       disabled={isDisconnecting}
@@ -644,12 +717,6 @@ function IntegrationsContent() {
                         ? <Loader2 size={11} className="animate-spin" />
                         : <X size={11} />}
                       Disconnect
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setConnectModal(platform)}
-                      className="fext-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
-                    >                      Connect
                     </button>
                   )}
                 </div>
@@ -678,6 +745,7 @@ function IntegrationsContent() {
               <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
             </div>
           ) : (
+            <>
             <div className="grid grid-cols-[1.2fr_1.4fr_1.6fr_1fr_1.2fr_1fr_1fr] items-center px-4 py-3.5 hover:bg-neutral-50/50 transition-colors">
               <div className="flex items-center gap-2"><GoogleIcon /><span className="text-sm font-medium text-neutral-800">Gmail</span></div>
               <div className="flex items-center gap-1.5">
@@ -712,6 +780,51 @@ function IntegrationsContent() {
                 )}
               </div>
             </div>
+
+            {/* ── Outlook row ── */}
+            <div className="grid grid-cols-[1.2fr_1.4fr_1.6fr_1fr_1.2fr_1fr_1fr] items-center px-4 py-3.5 border-t border-neutral-100 hover:bg-neutral-50/50 transition-colors">
+              <div className="flex items-center gap-2">
+                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none">
+                  <rect width="24" height="24" rx="3" fill="#0078D4"/>
+                  <path d="M13 6h7v12h-7V6z" fill="#50B1F8"/>
+                  <rect x="4" y="8" width="8" height="8" rx="1" fill="white"/>
+                  <text x="8" y="15" textAnchor="middle" fontSize="7" fill="#0078D4" fontWeight="bold">M</text>
+                </svg>
+                <span className="text-sm font-medium text-neutral-800">Outlook</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-neutral-700">{outlookStatus.outlook_connected ? 'AutoHyre User' : '—'}</span>
+                {outlookStatus.outlook_connected && <button className="p-0.5 rounded hover:bg-neutral-100 text-neutral-400"><Pencil className="w-3 h-3" /></button>}
+              </div>
+              <span className="text-sm text-neutral-700 truncate">{outlookStatus.outlook_email ?? (outlookStatus.outlook_connected ? '—' : 'Not connected')}</span>
+              <span className="text-sm text-neutral-700">{outlookStatus.outlook_connected ? '100' : '—'}</span>
+              <span className="text-sm text-neutral-400">—</span>
+              <span className={cn('text-xs font-semibold', outlookStatus.outlook_connected ? 'text-green-600' : 'text-neutral-400')}>
+                {outlookStatus.outlook_connected ? 'Connected' : 'Not connected'}
+              </span>
+              <div>
+                {outlookStatus.outlook_connected ? (
+                  <button
+                    onClick={disconnectOutlook}
+                    disabled={disconnectingOutlook}
+                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                  >
+                    {disconnectingOutlook ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                    Disconnect
+                  </button>
+                ) : (
+                  <button
+                    onClick={connectOutlook}
+                    disabled={connectingOutlook}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#0078D4] text-white hover:bg-[#006CBD] transition-colors disabled:opacity-50"
+                  >
+                    {connectingOutlook ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+                    Connect
+                  </button>
+                )}
+              </div>
+            </div>
+            </>
           )}
         </div>
       </section>
